@@ -1,0 +1,63 @@
+{
+  "case": "pbo_ties",
+  "expected": [
+    {
+      "file": "expected_pbo_s4.csv",
+      "sha256": "b5be90ef4318d9d80082a2f79ce1302f345d31771a7c905780bbf8a8d7f5220b"
+    },
+    {
+      "file": "expected_pbo_s8.csv",
+      "sha256": "fb3d00da23a95f8d744e5755ccb736d6a77faffbde0a756aa588b1d651ecee7e"
+    },
+    {
+      "file": "expected_pbo_summary_s4.csv",
+      "sha256": "ed8cb194585a5fd6ce6c0df2e293eef04dd4727ad68bb313ebeb5becdf5faf70"
+    },
+    {
+      "file": "expected_pbo_summary_s8.csv",
+      "sha256": "20d85587b2c9c38235b9f717310e5be2eaff8908e6016553fdbbd77d5c474b47"
+    }
+  ],
+  "input": {
+    "file": "input.csv",
+    "sha256": "75a3f2c03f1f14a768bdf04eb4e4db63fd1f2b2607a18ea7770f1781dd9a5d40"
+  },
+  "input_generation": {
+    "file": "input_generation.txt",
+    "sha256": "9aeac69bc2585032ae905d561466e46866670742d67b5d901968bbeb1caba2cd"
+  },
+  "kind": "pbo",
+  "meta": {
+    "file": "meta.csv",
+    "sha256": "95d7baf8deeac26acb4545112fd9c9c25bfeb573f1f0c3245033858c27282ce2"
+  },
+  "reference": {
+    "function_called": "pbo::pbo(m",
+    "pbo_version": "1.3.5",
+    "poolr_version": "1.2.0",
+    "r_version": "R version 4.6.2 (2026-10-29 ucrt)",
+    "renv_version": "1.3.1",
+    "s_values": "4;8"
+  },
+  "tolerance": {
+    "derived_from_ranks": [
+      "omega_bar",
+      "lambda_raw",
+      "lambda",
+      "phi"
+    ],
+    "derived_rule": "rtol=1e-12: funções elementares de inteiros (rank/N, logit)",
+    "discrete_fields": [
+      "is_blocks",
+      "n_star",
+      "n_max_oos",
+      "os_rank"
+    ],
+    "discrete_rule": "igualdade exata (argmax, ranks e partições são inteiros)",
+    "float_fields": [
+      "rn",
+      "rbn"
+    ],
+    "float_rule": "rtol=1e-12, atol=1e-15: Sharpe de até 480 observações; a diferença de ordem de soma entre R e NumPy gera erro relativo da ordem de T·eps ≈ 1e-13"
+  }
+}

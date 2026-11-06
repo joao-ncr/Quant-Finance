@@ -1,0 +1,38 @@
+{
+  "case": "meff_independent",
+  "expected": [
+    {
+      "file": "expected_eigenvalues.csv",
+      "sha256": "a3aca6048be52efa172c365ee3eae17bcefbb07474816e3787aef47541f7cc63"
+    },
+    {
+      "file": "expected_meff.csv",
+      "sha256": "e07d27974a5c016175eb31611faed2252518b47bd18b791ad375e84baa79852d"
+    }
+  ],
+  "input": {
+    "file": "input.csv",
+    "sha256": "782f0ae9debe925b20c556074e871023b815fa4c282d3b7bba4702ca36ff1cad"
+  },
+  "input_generation": {
+    "file": "input_generation.txt",
+    "sha256": "9b9e604efe1564b9d6eaaafd3171b5209cf18c761b017d99e2959c16846eeb90"
+  },
+  "kind": "meff",
+  "meta": {
+    "file": "meta.csv",
+    "sha256": "a422a38ffb5c31b4ef06ae9f99674bdecb7c2301d5ebc2ea6f9a837f635bc4c8"
+  },
+  "reference": {
+    "function_called": "poolr::meff(cor(m)",
+    "note": "poolr aplica floor() ao resultado de todos os métodos",
+    "pbo_version": "1.3.5",
+    "poolr_version": "1.2.0",
+    "r_version": "R version 4.6.2 (2026-10-29 ucrt)",
+    "renv_version": "1.3.1"
+  },
+  "tolerance": {
+    "eigenvalue": "rtol=1e-9: autovalores via LAPACK nos dois lados; matriz 20×20 bem condicionada. Risco conhecido: liji e gao têm descontinuidades (floor, limiar 0,995), então um autovalor no limite pode mudar o inteiro",
+    "meff_floor": "igualdade exata do valor inteiro (poolr aplica floor)"
+  }
+}

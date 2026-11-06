@@ -1,0 +1,71 @@
+{
+  "case": "pbo_noise",
+  "expected": [
+    {
+      "file": "expected_pbo_s12.csv",
+      "sha256": "c9b56c39e602210b8fbd37dccfda35ae620b754a9827fcc7fb2de25c38539b4b"
+    },
+    {
+      "file": "expected_pbo_s4.csv",
+      "sha256": "29aa173c488c55fb0751efa9dc77435b27acdaa1eac49b447daa1c69ebf0e101"
+    },
+    {
+      "file": "expected_pbo_s8.csv",
+      "sha256": "26e1a6a28552afb1f1d2c642a744c6863f04ff979a482f360b7e98d3937f82cb"
+    },
+    {
+      "file": "expected_pbo_summary_s12.csv",
+      "sha256": "f44a29e129d757ab5672c976a91e06af72dea94273272cc7d0543edcf2bf9f59"
+    },
+    {
+      "file": "expected_pbo_summary_s4.csv",
+      "sha256": "ed8cb194585a5fd6ce6c0df2e293eef04dd4727ad68bb313ebeb5becdf5faf70"
+    },
+    {
+      "file": "expected_pbo_summary_s8.csv",
+      "sha256": "382a7d81c3b64acd4962823a79bcf5f456e909086e631d9830e89ed4df952e6d"
+    }
+  ],
+  "input": {
+    "file": "input.csv",
+    "sha256": "b3ff4a16b63204167ce6d0a8970a6d6ab8cd894ec4036e05ca20eebf2b5d9e76"
+  },
+  "input_generation": {
+    "file": "input_generation.txt",
+    "sha256": "e7f803549f7fd86bd2d277ff44730065ba746b94672b69147d69aa6aa0b5fcee"
+  },
+  "kind": "pbo",
+  "meta": {
+    "file": "meta.csv",
+    "sha256": "fcb2ec071658a7d5390d2e956c549c558614e1b43fd3ee2e0f40ce4c4040c559"
+  },
+  "reference": {
+    "function_called": "pbo::pbo(m",
+    "pbo_version": "1.3.5",
+    "poolr_version": "1.2.0",
+    "r_version": "R version 4.6.2 (2026-10-29 ucrt)",
+    "renv_version": "1.3.1",
+    "s_values": "4;8;12"
+  },
+  "tolerance": {
+    "derived_from_ranks": [
+      "omega_bar",
+      "lambda_raw",
+      "lambda",
+      "phi"
+    ],
+    "derived_rule": "rtol=1e-12: funções elementares de inteiros (rank/N, logit)",
+    "discrete_fields": [
+      "is_blocks",
+      "n_star",
+      "n_max_oos",
+      "os_rank"
+    ],
+    "discrete_rule": "igualdade exata (argmax, ranks e partições são inteiros)",
+    "float_fields": [
+      "rn",
+      "rbn"
+    ],
+    "float_rule": "rtol=1e-12, atol=1e-15: Sharpe de até 480 observações; a diferença de ordem de soma entre R e NumPy gera erro relativo da ordem de T·eps ≈ 1e-13"
+  }
+}

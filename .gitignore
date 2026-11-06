@@ -1,0 +1,41 @@
+# --- Claude Code: instruções privadas (não publicar) ---
+CLAUDE.md
+CLAUDE.local.md
+**/CLAUDE.local.md
+# Configuração pessoal do Claude Code (permissões locais etc.)
+.claude/settings.local.json
+# Observação: .claude/settings.json, .claude/agents/, .claude/commands/ e
+# .claude/skills/ são compartilháveis e continuam versionáveis.
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+
+.hypothesis/
+.ruff_cache/
+
+# --- Dados e artefatos (reproduzíveis a partir de brutos + manifestos; DA-04) ---
+data/raw/
+data/processed/
+experiments/artifacts/
+experiments/*.lock
+# Versionados de propósito: data/manifests/, experiments/ledger.jsonl, configs/
+
+# --- R ---
+validation/r/renv/library/
+validation/r/renv/staging/
+.Rhistory
+.RData
+.Rproj.user/
+
+# --- Segredos e ambiente local ---
+.env
+
+# --- Sistema operacional / editor ---
+.DS_Store
+Thumbs.db

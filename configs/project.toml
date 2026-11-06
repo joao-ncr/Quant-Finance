@@ -1,0 +1,19 @@
+# Configuração central do projeto Frente E.
+# Todas as chaves são obrigatórias; chaves desconhecidas são erro (sem padrões silenciosos).
+# Caminhos relativos são resolvidos a partir da raiz do projeto.
+
+[paths]
+raw_data = "data/raw"              # brutos imutáveis (fora do Git)
+processed_data = "data/processed"  # derivados endereçados por hash (fora do Git)
+manifests = "data/manifests"       # hashes e proveniência dos brutos (versionado)
+experiments = "experiments"
+artifacts = "experiments/artifacts"  # séries por tentativa (fora do Git)
+ledger = "experiments/ledger.jsonl"  # registro científico de tentativas (versionado)
+reports = "reports"
+
+[runtime]
+# Orçamento provisório (DA-07). Calibrado para a máquina de desenvolvimento:
+# Intel i5-7200U (2 núcleos físicos / 4 lógicos), 7,9 GB de RAM.
+memory_fraction = 0.6          # fração da RAM *disponível no início da execução*
+max_workers = 2                # = núcleos físicos; hyperthreading rende pouco em código numérico
+native_threads_per_worker = 1  # evita oversubscription BLAS/Polars × processos

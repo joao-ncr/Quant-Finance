@@ -1,0 +1,9 @@
+Type: Project
+Package: frenteEValidation
+Title: Independent reference results for Frente E (validation only)
+Version: 0.1.0
+Description: Isolated R environment that produces golden files for the Python
+    implementation. Never part of the execution pipeline.
+Imports:
+    pbo,
+    poolr

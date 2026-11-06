@@ -1,0 +1,7 @@
+key,value
+r_version,R version 4.6.2 (2026-10-29 ucrt)
+pbo_version,1.3.5
+poolr_version,1.2.0
+renv_version,1.3.1
+function_called,pbo::pbo(m, s, f = sharpe_columns, threshold = 0)
+s_values,4;8

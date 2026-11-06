@@ -1,0 +1,5 @@
+root_seed=20261106
+stream=3
+shape=(480, 20)
+generator=numpy.random.PCG64 via SeedSequence(entropy=root_seed, spawn_key=(stream,))
+numpy=2.5.4

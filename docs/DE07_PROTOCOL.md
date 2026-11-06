@@ -1,8 +1,34 @@
 # DE-07 — Protocolo de calibração, desenho não nulo e seleção de (N, V)
 
-**Versão:** v1-proposta (2026-11-06). **Não congelada.** Ver as decisões D1–D7 (§10), que exigem aprovação.
+**Versão:** v1 (2026-11-06). Histórico: v1-proposta (commit `33ed2dd`) → **decisões D1–D7 aprovadas pelo desenvolvedor** (2026-11-06, Etapa B1). A matriz final de células e o manifesto são fixados na Etapa B3 (§7.4); o hash deste arquivo é registrado no manifesto e qualquer alteração posterior exige uma v2.
 **Escopo:** só dados sintéticos. Nenhum dado real da B3 é lido neste ciclo.
 **Base:** commit `0fe6231`; ledger íntegro com 8 registros, head `8:714a3329…` (verificado em 2026-11-06).
+
+## 0. Decisões aprovadas e classificação do conteúdo
+
+### 0.1 Decisões D1–D7 (aprovadas em 2026-11-06, com as ressalvas do desenvolvedor)
+| ID | Decisão aprovada | Ressalva registrada |
+|---|---|---|
+| D1 | Critério de sucesso 2 → **2a** (taxa de falsos positivos do DSR ≤ α em **toda** estrutura avaliada), **2b** (nível nominal do PSR de uma configuração escolhida antes), **2c** (poder reportado) | as taxas são julgadas com a incerteza de Monte Carlo (intervalos e testes do §5.3), nunca só pela estimativa pontual |
+| D2 | α = 0,05 (limiar DSR 0,95) | **só** para avaliar a calibração do método. DE-09 continua PENDING; nenhum limiar universal de PBO é criado |
+| D3 | Seleção de (N, V): domínio → validade com Holm → maior poder no pior caso; sem par aprovado, nenhum vencedor | V_ρ = V_H0·(1 − ρ̂̄) entra como **candidato experimental**, derivação própria, não estimador estabelecido na literatura. A inclusão não antecipa aprovação |
+| D4 | Médias específicas persistentes de média transversal zero, pela regra DE-01 completa; δ* ∈ {1; 2,5; 4}; h ∈ {63; 252}; célula separada de prêmio de mercado sem momentum | calibração da intensidade **só** pelo Sharpe verdadeiro do gerador (§7.2) |
+| D5 | R = 20 000 (gaussiano), 1000 (momentum sem sinal), 500 (momentum com sinal) | **orçamento de até 2 h**, obtido reduzindo **células**, nunca réplicas. As seis células `low_common` com sinal ficam **fora** desta rodada. A matriz de §7.4 (preliminar, ≈ 6 h) é substituída pela matriz final da Etapa B3 |
+| D6 | PBO sem limiar universal: distribuição nula da família, AUC nula × sinal, comparação com o sobreajuste verdadeiro | — |
+| D7 | Execuções confirmatórias: `SYNTHETIC`, fase confirmatória, vinculadas ao hash do protocolo, só com commit limpo | a Etapa B não registra nenhuma execução confirmatória |
+
+### 0.2 Classificação do conteúdo deste documento
+| Categoria | Onde | Natureza |
+|---|---|---|
+| **Resultados já observados** | §1.2 (execuções exploratórias), §2.2 (conferência da Tabela A com os registros) | exploratórios; nenhum entra nas regras de decisão |
+| **Resultados analíticos** | §2.2 (Tabela A), §2.3 (identidade de V), §2.4 (inexistência de N*) | determinísticos, verificados por teste; justificam o desenho, não decidem |
+| **Hipóteses e justificativas** | §3, §7.1, §7.3 e as marcas [inferência] | premissas de modelagem |
+| **Critérios que serão testados** | §4, §5, §6 | fixados antes da Etapa C |
+| **Decisões só possíveis após a Etapa C** | adoção (ou não) de um par (N, V), do estimador de N efetivo e de V_ρ; status final de DE-03, DE-04.b e do item 5 de METHODOLOGY §1.9; insumos para DE-09 | dependem das execuções confirmatórias |
+
+**Registro explícito (P7):** a taxa exploratória "0–8% (média 4%)" de DSR > 0,95 atribuída à grade (METHODOLOGY §7.6, leitura 4) **não foi reproduzida pelo código versionado** e **não pode ser usada como evidência confirmatória**.
+
+**Inalterados por este ciclo:** DE-09, DD-01, DE-01.h, DE-01.i e DD-03 continuam no estado em que estavam.
 
 Marcas usadas: **[fato]** (número registrado no ledger ou identidade matemática verificada por teste), **[inferência]**, **[lit., não conferido]** (referência conhecida, texto integral não lido nesta sessão), **[proposta]** (depende de aprovação).
 
@@ -120,7 +146,7 @@ Consequências:
 
 **Sob sinal [inferência]:** com SR verdadeiros SRᵢ de variância transversal τ², E[V entre tentativas] ≈ σ²(1 − ρ̄) + τ². O benchmark sobe com o próprio sinal, o que custa poder. O artigo define V como "the variance across the trials' estimated SR" [verificado visualmente, eq. 2] e não discute essa contaminação no trecho conferido.
 
-**Candidato novo [proposta, D3]:** V_ρ = V_H0·(1 − ρ̂̄), com ρ̂̄ estimado de Ĉ. É a esperança nula de V entre tentativas, sem τ². **Não está na literatura conferida.** É uma derivação própria a partir da identidade acima e só entra no conjunto se for aprovado. Ele **não** muda o conjunto de estimadores de N (`ESTIMATORS`).
+**Candidato experimental [D3, incluído em 2026-11-06]:** V_ρ = V_H0·(1 − ρ̂̄), com ρ̂̄ estimado de Ĉ. É a esperança nula de V entre tentativas, sem τ². **Não está na literatura conferida.** É uma derivação própria a partir da identidade acima. Está no conjunto avaliado, mas sua adoção depende da Etapa C. Ele **não** muda o conjunto de estimadores de N (`ESTIMATORS`).
 
 **Descritivo × inferencial.** V é inferencial quando entra no SR₀ de um DSR reportado. As grandezas "V marginal" (variância de ŜR entre réplicas) e "N*" só existem na simulação e são **referências descritivas**, nunca entradas do DSR.
 
@@ -195,7 +221,7 @@ Ver §6.
 
 ## 5. Critérios de seleção e rejeição
 
-### 5.1 Critério de sucesso 2, reformulado [proposta, D1]
+### 5.1 Critério de sucesso 2, reformulado [DECIDED, D1]
 Texto original (documento de partida): *"na simulação sem sinal, a taxa de falsa descoberta fica próxima do nível nominal"*.
 
 Proposta:
@@ -213,8 +239,8 @@ Alternativas consideradas:
 - (ii) trocar o benchmark E[máx] pelo quantil 1 − α do máximo nulo estimado por reamostragem (no espírito de White 2000 e Hansen 2005 [lit., não conferido]): é outro método, não o DSR; fica registrado como possível trabalho futuro e **fora** deste ciclo;
 - (iii) tratar o DSR como puramente descritivo, sem critério: abandona a pergunta do projeto.
 
-### 5.2 Seleção do par (N, V) [proposta, D3]
-Conjunto avaliado: 6 estimadores de N × {V entre tentativas, V_H0} (+ V_ρ se D3 aprovar), todos pré-registrados.
+### 5.2 Seleção do par (N, V) [DECIDED, D3]
+Conjunto avaliado: 6 estimadores de N × {V entre tentativas, V_H0, V_ρ} = 18 pares, todos pré-registrados. V_ρ é **candidato experimental** (D3), derivação própria.
 
 1. **Domínio:** um par é inadmissível numa estrutura se N̂ < 2 em alguma réplica. O DSR não é calculável, e trocar N̂ silenciosamente seria um improviso (DE-04.c). A fração indefinida é reportada.
 2. **Validade:** o par é inadmissível se violar 2a em qualquer estrutura nula, seja de nível Z ou de nível P (§7).
@@ -241,7 +267,7 @@ O estimador de N efetivo "adotado" é o N do par escolhido. Se esse N for o M br
 
 ## 6. Protocolo da PBO
 
-**Princípio [proposta, D6]:** a PBO de uma realização é interpretada **contra a distribuição nula da própria família e estrutura**, sem limiar universal. DE-09 continua PENDING para os dados reais.
+**Princípio [DECIDED, D6]:** a PBO de uma realização é interpretada **contra a distribuição nula da própria família e estrutura**, sem limiar universal. DE-09 continua PENDING para os dados reais.
 
 Por família (F4, F16, F144) × estrutura:
 - **distribuição nula:** média, desvio, percentis {5, 10, 25, 50, 75, 90, 95} com IC por estatística de ordem, e a função de distribuição empírica completa no artefato;
@@ -256,9 +282,9 @@ Por família (F4, F16, F144) × estrutura:
 
 ---
 
-## 7. Cenários e desenho não nulo (preliminar)
+## 7. Cenários e desenho não nulo
 
-### 7.1 Gerador não nulo [proposta, D4]
+### 7.1 Gerador não nulo [DECIDED, D4]
 Extensão do gerador atual (`simulate_factor_returns`), com o mesmo fator, betas e volatilidades, mais um termo de média específica:
 
 ```
@@ -275,7 +301,7 @@ a_i,t = φ·a_i,t−1 + √(1 − φ²)·s_a·ξ_i,t,   φ = 2^(−1/h)
   - plantar alfa nas séries das estratégias: ignora a mecânica e torna a vencedora conhecida por construção;
   - autocorrelação dos retornos: mistura sinal com dependência temporal, que o DE-06 já tratou como inexistente sob H₀.
 
-### 7.2 Intensidades e persistência [proposta, D4]
+### 7.2 Intensidades e persistência [DECIDED, D4]
 - **Intensidade definida pelo alvo, não pelo parâmetro:** δ* = máx_{F144} SR verdadeiro × √(T − 1) ∈ {1,0; 2,5; 4,0} (fraco, intermediário, forte).
   - Fundamento: δ é o deslocamento do z do PSR. Um teste único pré-especificado de 5% teria poder ≈ 26%, 80% e 99%.
   - Isso ancora as intensidades na escala do próprio teste, **sem olhar o DSR nem a PBO**.
@@ -296,7 +322,7 @@ a_i,t = φ·a_i,t−1 + √(1 − φ²)·s_a·ξ_i,t,   φ = 2^(−1/h)
 
 **Lacuna declarada:** nenhum cenário de nível P cobre correlação moderada, porque a carteira só comprada herda o fator de mercado (DE-01). O nível Z cobre esse regime, sem a mecânica.
 
-### 7.4 Desenho completo [proposta, D5]
+### 7.4 Desenho completo [proposta original de D5; **substituída pela matriz final da Etapa B3**, que respeita o orçamento de 2 h]
 | Nível | Células | R por célula |
 |---|---|---|
 | Z (gaussiano, ŜR = σ·Z, C fixa) | 9 genéricas + 9 de correlação extrema = 18, só H₀ | 20 000 |
@@ -318,7 +344,7 @@ a_i,t = φ·a_i,t−1 + √(1 − φ²)·s_a·ξ_i,t,   φ = 2^(−1/h)
 - **Nível Z: R = 20 000.** O custo é desprezível e permite medir taxas de 0,1%.
 - Nenhuma réplica é reduzida para caber no orçamento (CLAUDE.md §11.2).
 
-### 8.2 Custo (medido em 2026-11-06, só engenharia, sem estatísticas)
+### 8.2 Custo (medido em 2026-11-06, só engenharia, sem estatísticas; estimativa da proposta original, revista na Etapa B3)
 - Grade F144: 3,7 s. CSCV F144 com S = 16: 1,1 s. Réplica completa: ≈ 5 s.
 - Nível P: 4000 (H₀) + 3500 (H₁) + 700 (oráculo, ≈ 3,7 s cada) ≈ 11,2 h sequencial, ≈ 6 h com 2 processos.
 - Calibração de s_a: ≈ 1 h.
@@ -349,7 +375,9 @@ a_i,t = φ·a_i,t−1 + √(1 − φ²)·s_a·ξ_i,t,   φ = 2^(−1/h)
 
 ---
 
-## 10. Decisões que exigem aprovação
+## 10. Decisões D1–D7 (histórico da proposta)
+**Estado: todas aprovadas em 2026-11-06**, com as ressalvas de §0.1. A tabela abaixo é a proposta original, preservada como histórico; onde ela diverge de §0.1 (orçamento de D5), vale §0.1.
+
 | ID | Decisão | Recomendação | Consequência se aprovada | Consequência se rejeitada |
 |---|---|---|---|---|
 | **D1** | Reformular o critério de sucesso 2 como 2a/2b/2c (§5.1) | aprovar | o DSR é avaliado por validade + poder; o PSR, por calibração exata | manter "próxima do nominal" exige escolher a estrutura em que vale, e o DSR seria reprovado com tentativas independentes |

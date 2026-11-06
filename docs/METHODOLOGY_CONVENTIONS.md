@@ -153,7 +153,7 @@ Estado em 2026-11-06: itens 1–4 *implementados e passando*; item 5 *pendente* 
 3. Monotonia: PSR decrescente em SR*, afastando-se de 1/2 conforme T cresce, e com PSR(SR*) = 1/2; antissimetria `PSR(ŜR, SR*, γ₃) + PSR(−ŜR, −SR*, −γ₃) = 1`; SR₀ crescente em N e em V.
    - **Correção:** a versão anterior deste item dizia "PSR crescente em ŜR", o que é **falso** em geral. Sob normalidade, z(ŜR) decresce quando 1 + SR*·ŜR/2 < 0 (por exemplo SR* = 1 e ŜR ≈ −3). A monotonia em ŜR só é testada para SR* ≥ 0 sob normalidade.
 4. Fronteiras com erro explícito: radicando nulo, momentos impossíveis, T ≤ 1, N < 2, V < 0, entradas não finitas ou booleanas, confiança fora de (0,5; 1).
-5. Calibração por simulação: sob H₀ (SR verdadeiro = SR*), PSR ~ U(0,1) aproximadamente para T grande, inclusive com caudas pesadas. Fica para o desenho de DE-07 (semente fixa e tolerância de Monte Carlo declaradas antes de rodar). **Proposta (2026-11-06):** critério 2b de [DE07_PROTOCOL.md](DE07_PROTOCOL.md) §5.1, com a configuração (6, 6) pré-especificada. O DSR **não** deve ter nível exato (§2.2 do protocolo), então este item vale para o PSR de uma configuração única.
+5. Calibração por simulação: sob H₀ (SR verdadeiro = SR*), PSR ~ U(0,1) aproximadamente para T grande, inclusive com caudas pesadas. Fica para o desenho de DE-07 (semente fixa e tolerância de Monte Carlo declaradas antes de rodar). **DECIDED (2026-11-06, D1):** critério 2b de [DE07_PROTOCOL.md](DE07_PROTOCOL.md) §5.1, com a configuração (6, 6) pré-especificada. O DSR **não** deve ter nível exato (§2.2 do protocolo), então este item vale para o PSR de uma configuração única.
 
 ---
 
@@ -740,7 +740,7 @@ O gerador separa a dependência (fator comum, heterogeneidade, aglomeração de 
 - considerar estimar N efetivo sobre a correlação dos **componentes específicos** (desvios da média transversal), uma ideia **sem fonte conferida**.
 - Tudo isso a pré-registrar antes de executar, de preferência junto com o desenho não nulo de DE-07.
 
-**Atualização (2026-11-06, DE-07 Etapa A):** a emenda 4 foi incorporada ao protocolo v1 **proposto** em [DE07_PROTOCOL.md](DE07_PROTOCOL.md), aguardando aprovação. Achados que revisam leituras desta seção, sem apagá-las:
+**Atualização (2026-11-06, DE-07 Etapa A):** a emenda 4 foi incorporada ao protocolo v1 em [DE07_PROTOCOL.md](DE07_PROTOCOL.md) (proposto na Etapa A; D1–D7 aprovadas na Etapa B1, 2026-11-06). Achados que revisam leituras desta seção, sem apagá-las:
 - **leitura 4:** a taxa "0–8%" não tem código versionado que a produza (o `grid_study` não calcula DSR); fica como exploratória;
 - **leitura 5:** a inferência foi confirmada analiticamente. Na equicorrelação, P(DSR > 0,95) com (M, E[V entre tentativas]) cresce de 0,12% para 4,98% com ρ, sem passar de α (protocolo §2.2, Tabela A, testada);
 - **leitura 1:** com ρ ≥ 0,95, E[máx Z] < f(2), de modo que o N implícito não existe por construção, e não só por ruído (protocolo §2.4);

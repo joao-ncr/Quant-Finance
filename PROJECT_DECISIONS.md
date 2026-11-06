@@ -158,7 +158,7 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
   - **Grade de momentum (2026-11-06, `run-36aa72b3…`):** V entre tentativas = 2–8% de V marginal.
     - Descritivo post hoc: (M, V entre tentativas) teve |erro| ≤ 0,20 σ_SR e taxa de DSR > 0,95 sob a nula de 0 a 8% (média 4%), nas 12 estruturas. Os pares com N efetivo chegaram a 10%; V_H0 foi conservador demais.
     - O primário provisório se mantém, **ainda PROVISÓRIO**, porque falta o desenho não nulo (DE-07) e a evidência é descritiva (o critério formal foi não informativo).
-    - **Nota (2026-11-06, Etapa A de DE-07):** a taxa "0–8%" acima não é reproduzível pelo código versionado (o `grid_study` não calcula DSR). Fica classificada como exploratória, sem peso decisório. A coerência do par (M, V entre tentativas) agora tem base analítica: E[V entre tentativas] = σ²(1 − ρ̄) (identidade exata). Sob sinal, V entre tentativas incorpora a dispersão dos SR verdadeiros. Candidato adicional proposto (D3, não aprovado): V_ρ = V_H0·(1 − ρ̂̄). Ver docs/DE07_PROTOCOL.md §2.3.
+    - **Nota (2026-11-06, Etapa A de DE-07):** a taxa "0–8%" acima não é reproduzível pelo código versionado (o `grid_study` não calcula DSR). Fica classificada como exploratória, sem peso decisório. A coerência do par (M, V entre tentativas) agora tem base analítica: E[V entre tentativas] = σ²(1 − ρ̄) (identidade exata). Sob sinal, V entre tentativas incorpora a dispersão dos SR verdadeiros. Candidato adicional: V_ρ = V_H0·(1 − ρ̂̄), **incluído como candidato experimental pela D3 (DECIDED 2026-11-06)**, derivação própria, sem aprovação antecipada como V principal. Ver docs/DE07_PROTOCOL.md §2.3. **DE-04.b continua PROVISÓRIO** até a Etapa C.
 - **Contexto e problema:** DSR = PSR com benchmark igual ao máximo esperado sob a nula, que depende de N e de V[{ŜRₙ}]. Falta definir quais tentativas entram em N e V (só a grade final? todas as já executadas?).
 - **Alternativas consideradas:** N/V apenas da grade final vs. de todo o log de tentativas.
 - **Sub-decisão pendente:** ddof da variância V entre tentativas (o texto extraído do artigo não especifica).
@@ -212,7 +212,17 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Consequências:** Afeta a validade de PSR/DSR e da PBO.
 
 ### DE-07 — Simulação sem sinal e critério de taxa nominal
-- **Status:** **IN PROGRESS (2026-11-06, ciclo DE-07, Etapa A).** Protocolo v1 **proposto, não congelado**: [docs/DE07_PROTOCOL.md](docs/DE07_PROTOCOL.md). Aguarda as decisões D1–D7 (§10 do protocolo). Nenhuma simulação confirmatória foi executada. Histórico: PENDING até esta data.
+- **Status:** **IN PROGRESS.** Protocolo v1 com **D1–D7 DECIDED (2026-11-06, aprovadas pelo desenvolvedor)**; matriz de células e manifesto na Etapa B3; nenhuma simulação confirmatória executada. Histórico: PENDING → IN PROGRESS (protocolo proposto, Etapa A, `33ed2dd`) → D1–D7 DECIDED (Etapa B1).
+- **Decisões aprovadas (docs/DE07_PROTOCOL.md §0.1):**
+  - **D1 — DECIDED:** critério de sucesso 2 = 2a (falsos positivos do DSR ≤ α em toda estrutura avaliada), 2b (nível nominal do PSR de configuração pré-escolhida, (6, 6)), 2c (poder reportado), sempre com incerteza de Monte Carlo (Clopper-Pearson, teste binomial, Holm).
+  - **D2 — DECIDED:** α = 0,05 (limiar 0,95) só para avaliar o método. **DE-09 continua PENDING**; nenhum limiar universal de PBO.
+  - **D3 — DECIDED:** seleção de (N, V) por domínio → validade (Holm) → maior poder no pior caso; sem par aprovado, nenhum vencedor. **V_ρ = V_H0·(1 − ρ̂̄) é candidato experimental** (derivação própria, não literatura); a inclusão não antecipa aprovação.
+  - **D4 — DECIDED:** gerador com médias específicas persistentes de média transversal zero, pela regra DE-01 completa; δ* ∈ {1; 2,5; 4}; h ∈ {63; 252}; célula de prêmio de mercado sem momentum; calibração só pelo Sharpe verdadeiro.
+  - **D5 — DECIDED:** R = 20 000 / 1000 / 500; orçamento de até 2 h, reduzindo células e nunca réplicas; sem as células `low_common` com sinal.
+  - **D6 — DECIDED:** PBO contra a distribuição nula da família, AUC e sobreajuste verdadeiro; sem limiar universal.
+  - **D7 — DECIDED:** confirmatórias como `SYNTHETIC` + fase confirmatória + hash do protocolo + commit limpo.
+- **Evidência que não vale como confirmatória:** a taxa "0–8%" de DSR > 0,95 na grade não foi reproduzida pelo código versionado (ver DE-04.b).
+- **Só após a Etapa C:** adoção de um par (N, V), do estimador de N efetivo e de V_ρ; item 5 de METHODOLOGY §1.9.
 - **Etapa A (2026-11-06), achados:**
   - **Escala do PSR:** a análise dimensional não encontrou mistura de unidades em nenhum caminho do cálculo (§2.1). A "escala do PSR" da emenda 4 é a proposta de medir o erro de SR₀ em unidades de σ_SR, não um erro de código.
   - **Causa da calibração dependente da estrutura [fato, fórmula exata testada]:** o PSR padroniza pelo desvio de **um** ŜR, e o DSR o aplica ao máximo. Na equicorrelação com V = E[V entre tentativas] e N = M, P(DSR > 0,95) vai de 0,12% (ρ = 0, M = 144) a 4,98% (ρ = 0,999), **sem passar de α**. A conta reproduz os registros exploratórios (4,22% contra 4,22%; 0,145% contra 0,13%). `core.null_models.dsr_null_rejection_rate_equicorrelated`.

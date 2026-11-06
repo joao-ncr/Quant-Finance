@@ -382,6 +382,18 @@ As células h = 252 com δ* ∈ {2,5; 4} e a H₁-com não foram calibradas.
 
 **Execução:** todas as células (h ∈ {63, 252} × δ* ∈ {1; 2,5; 4} e H₁-com), com **semente raiz fixa 7514066048065518955**, nova, registrada aqui antes da execução e no ledger. A grade (30 réplicas) e a verificação (100 réplicas) mantêm os fluxos separados; nenhuma réplica foi aumentada. O manifesto só é gerado se **todas** as células estiverem calibradas (o gerador recusa os outros status). Se alguma sair inconclusiva ou reprovada, o trabalho para e aguarda decisão.
 
+### 7.2.4 Segunda calibração (emenda 5) e nova falha registrada (2026-11-06)
+**Execução:** `run-c10ad4d709d746ab9a5c3fe64f0c4e69`, semente 7514066048065518955, commit `8b10529` com árvore limpa, 2 processos. **Status no ledger: `failed`** ("δ̂*(s) não é positivo e estritamente crescente na grade"). Sem artefato. Nenhuma célula chegou à verificação nem à classificação da emenda 5.
+
+**Observado (grade, h = 63, 30 réplicas; valores do gerador):** s = 0,00025 / 0,0005 / 0,001 / 0,002 / 0,004 → δ̂* = **−0,21** / 0,11 / 1,35 / 5,22 / 15,05.
+
+**Diagnóstico.**
+- **[Fato]** O passo 2 do procedimento (§7.2.1) exige δ̂* > 0 e estritamente crescente em **todos** os pontos da grade, porque a interpolação é em log δ̂*.
+- **[Inferência]** Com sinal quase nulo (s = 0,00025), δ̂* fica no nível do ruído: o máximo do SR agregado em 30 réplicas recebe o ruído comum do fator de mercado (EP da ordem de 0,2–0,4 em δ) e pode ser negativo. Na primeira execução o mesmo ponto deu +0,18, por acaso.
+- **[Inferência]** É uma fragilidade do procedimento fixado, não do código nem do gerador: a interpolação só precisa dos dois pontos que **cercam** o alvo (para δ* = 1, s = 0,0005 e 0,001), e o ponto de ruído não tem papel.
+
+**Consequência:** não há calibração válida; o manifesto não foi gerado. Qualquer correção (por exemplo, exigir positividade e monotonia só no par que cerca o alvo) altera o procedimento depois de observar uma falha e **aguarda decisão do desenvolvedor**.
+
 ### 7.3 Representatividade e redundância dos cenários nulos (§4.2 do pedido)
 | Regime | Estruturas | Cobertura | Observação |
 |---|---|---|---|
@@ -471,6 +483,10 @@ Total estimado: **≈ 1,85 h** (momentum: custo sequencial medido / ganho 1,5 co
 
 - **Pré-condição de memória:** 2 processos exigem cerca de 0,6 GiB dentro do orçamento de 60% da RAM disponível, ou seja, ≥ 1 GiB disponível. Em medições anteriores havia só 0,75 GiB (orçamento de 0,45 GiB, um processo).
 - O executor confirmatório **falha explicitamente** se não puder usar os processos previstos no orçamento do manifesto, em vez de exceder o tempo em silêncio.
+
+**Benchmark F4/F16 (2026-11-06, depois da segunda calibração, com a CPU livre):** célula com sinal (h = 252), F4 + F16 com CSCV S = 16, 100 réplicas; 1,02 GiB de RAM disponível, carga de CPU de 21% antes do início. Sequencial: 0,752 s/réplica; 2 processos: 0,527 s/réplica; **ganho 1,43** (abaixo do 1,5 suposto para essas células; F144 mediu 1,58).
+
+**Orçamento da matriz proposta com os valores medidos por tipo** (P0-base a 3,50 s/réplica efetivos; F4/F16 a 0,527 s/réplica efetivos; 10 s de sobrecarga por célula; gaussianas sequenciais): P0-base ≈ 3510 s, P0-vol_clustering ≈ 534 s, 7 células com sinal ≈ 7 × 271 s, 51 gaussianas ≈ 536 s. Total **≈ 6480 s ≈ 1,80 h** (folga ≈ 10%). **Não validado como final**, porque a matriz depende da calibração.
 
 ### 8.3 Fases e registro (sem segundo mecanismo)
 | Fase | O que é | Registro | Pode ser reportado como evidência? |

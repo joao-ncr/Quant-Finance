@@ -133,6 +133,78 @@ def _require(condition: bool, message: str) -> None:
         raise ContractViolationError(message)
 
 
+# ------------------------------------------- calibração analítica do DSR (DE-07, protocolo v1)
+def null_cross_variance_factor(correlation: FloatArray) -> float:
+    """``E[s²(Z)]`` para Z ~ N(0, C), com s² a variância entre tentativas (ddof = 1).
+
+    Identidade exata para qualquer correlação C (M × M)::
+
+        E[s²(Z)] = (tr C − 1ᵀC1/M)/(M − 1) = 1 − ρ̄,
+
+    com ρ̄ a média das correlações fora da diagonal. Sob a nula global com variância
+    marginal σ² igual para todas as tentativas, a variância entre tentativas dos ŜR tem
+    esperança σ²·(1 − ρ̄): a correlação já entra em V (docs/DE07_PROTOCOL.md §2.3).
+    """
+    c = validate_correlation(correlation)
+    m = c.shape[0]
+    return float((np.trace(c) - np.sum(c) / m) / (m - 1))
+
+
+def prob_max_exceeds_equicorrelated(m: int, rho: float, threshold: float) -> float:
+    """``P(máxᵢ Zᵢ > c)`` para Z ~ N(0, C) equicorrelacionado (M ≥ 1, 0 ≤ ρ < 1).
+
+    Com ``Zᵢ = √ρ·W + √(1−ρ)·εᵢ``, condicionando em W::
+
+        P(máx Z > c) = ∫ φ(w)·[1 − Φ((c − √ρ·w)/√(1−ρ))ᴹ] dw
+
+    calculado pelo complemento ``−expm1(M·log Φ)`` para preservar probabilidades pequenas.
+    Em ρ = 0 vale a forma fechada ``1 − Φ(c)ᴹ``. Determinístico (quadratura), sem RNG.
+    """
+    _require(m >= 1, "m deve ser >= 1")
+    _require(0.0 <= rho < 1.0, "rho deve estar em [0, 1)")
+    _require(math.isfinite(threshold), "threshold deve ser finito")
+    if rho == 0.0:
+        return float(-math.expm1(m * float(special.log_ndtr(threshold))))
+    a, b = math.sqrt(rho), math.sqrt(1.0 - rho)
+
+    def integrand(w: float) -> float:
+        tail = -math.expm1(m * float(special.log_ndtr((threshold - a * w) / b)))
+        return math.exp(-0.5 * w * w) / math.sqrt(2.0 * math.pi) * tail
+
+    value, err = integrate.quad(integrand, -math.inf, math.inf, epsabs=1e-13, limit=400)
+    if err > QUADRATURE_MAX_ABS_ERROR:
+        raise ContractViolationError(f"integração imprecisa (erro estimado {err:.2e})")
+    return float(min(max(value, 0.0), 1.0))
+
+
+def dsr_null_rejection_rate_equicorrelated(
+    m: int, rho: float, n_obs: int, confidence: float, benchmark_z: float
+) -> float:
+    """``P(DSR > confidence)`` sob a nula global gaussiana, tentativas equicorrelacionadas.
+
+    Modelo (o mesmo de §4.4 de METHODOLOGY_CONVENTIONS): retornos normais (γ₃ = 0,
+    γ₄ = 3), ŜRᵢ = σ·Zᵢ com σ = 1/√(T − 1) e Z ~ N(0, C). ``benchmark_z`` é SR₀/σ, o
+    benchmark do DSR em unidades de σ, tratado como **fixo** (ex.: f(N) com V = V_H0, ou
+    √(1 − ρ)·f(M) com V igual à esperança da variância entre tentativas).
+
+    O DSR rejeita quando ``(x − SR₀)·√(T−1)/√(1 + x²/2) > q``, com x = máx ŜR e
+    q = Φ⁻¹(confidence). Para x > SR₀ o lado esquerdo é crescente em x, então o limiar
+    x* é a maior raiz de ``x²·((T−1) − q²/2) − 2·SR₀·(T−1)·x + SR₀²·(T−1) − q² = 0``.
+    """
+    _require(n_obs >= 3, "n_obs deve ser >= 3")
+    _require(0.5 < confidence < 1.0, "confidence deve estar em (0,5; 1)")
+    _require(math.isfinite(benchmark_z) and benchmark_z >= 0.0, "benchmark_z deve ser >= 0")
+    q = float(special.ndtri(confidence))
+    t1 = float(n_obs - 1)
+    sr0 = benchmark_z / math.sqrt(t1)
+    a = t1 - q * q / 2.0
+    _require(a > 0.0, "T pequeno demais para o limiar (T − 1 ≤ q²/2)")
+    b = -2.0 * sr0 * t1
+    c = sr0 * sr0 * t1 - q * q
+    x_star = (-b + math.sqrt(b * b - 4.0 * a * c)) / (2.0 * a)
+    return prob_max_exceeds_equicorrelated(m, rho, x_star * math.sqrt(t1))
+
+
 # ------------------------------------------------------------- painel de ativos sem sinal
 def simulate_factor_returns(
     n_obs: int,

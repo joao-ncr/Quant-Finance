@@ -120,6 +120,7 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
   - A saída mecânica da regra (`gao + V_H0`, pior erro de 2710%) **não é adotada**. **Nenhum estimador foi validado; o estimador principal continua PENDING.**
   - Os estimadores por autovalores dão N̂ < 2 em F4/F16 de vários cenários.
   - Próximo passo proposto (emenda 4, pendente): erro padronizado na escala do PSR, calibração P(DSR > 0,95) e ≥ 500 réplicas, pré-registrados junto com o desenho não nulo (DE-07).
+  - **Etapa A de DE-07 (2026-11-06):** a emenda 4 foi absorvida pelo protocolo v1 proposto (docs/DE07_PROTOCOL.md §4.3 e §5.2). Os três objetivos ficam separados: estimar N (descritivo), reproduzir E[máx] (diagnóstico em unidades de σ_SR) e inferência válida (decisório). Com a correlação da grade, o N implícito não existe (E[máx Z] < f(2)). O estimador principal **continua PENDING**.
 - **Limitação:** Nyholt, Li-Ji, Gao e Galwey foram implementados a partir do código do `poolr`; os artigos originais não foram conferidos. Galwey amplifica ruído de autovalores nulos (√ε). A fórmula A.3 extrapola para N̂ > M (até M + 1) quando a correlação média é negativa; o valor não é cortado (contraexemplo achado por teste de propriedade em 2026-11-06).
 - **Contexto e problema:** Configurações vizinhas são correlacionadas. N bruto superdeflaciona; ignorar tentativas subdeflaciona.
 - **Alternativas consideradas:** (a) N bruto como cota superior; (b) clusterização das séries de retornos, com N efetivo = nº de clusters (ONC: López de Prado e Lewis, *Quantitative Finance* 19(9), 2019); (c) medidas baseadas em autovalores da matriz de correlação (Nyholt 2004; Li e Ji 2005, *Heredity* 95(3); Galwey 2009, com implementação de referência em `poolr::meff`); (d) reportar sensibilidade do DSR a uma faixa de N.
@@ -157,6 +158,7 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
   - **Grade de momentum (2026-11-06, `run-36aa72b3…`):** V entre tentativas = 2–8% de V marginal.
     - Descritivo post hoc: (M, V entre tentativas) teve |erro| ≤ 0,20 σ_SR e taxa de DSR > 0,95 sob a nula de 0 a 8% (média 4%), nas 12 estruturas. Os pares com N efetivo chegaram a 10%; V_H0 foi conservador demais.
     - O primário provisório se mantém, **ainda PROVISÓRIO**, porque falta o desenho não nulo (DE-07) e a evidência é descritiva (o critério formal foi não informativo).
+    - **Nota (2026-11-06, Etapa A de DE-07):** a taxa "0–8%" acima não é reproduzível pelo código versionado (o `grid_study` não calcula DSR). Fica classificada como exploratória, sem peso decisório. A coerência do par (M, V entre tentativas) agora tem base analítica: E[V entre tentativas] = σ²(1 − ρ̄) (identidade exata). Sob sinal, V entre tentativas incorpora a dispersão dos SR verdadeiros. Candidato adicional proposto (D3, não aprovado): V_ρ = V_H0·(1 − ρ̂̄). Ver docs/DE07_PROTOCOL.md §2.3.
 - **Contexto e problema:** DSR = PSR com benchmark igual ao máximo esperado sob a nula, que depende de N e de V[{ŜRₙ}]. Falta definir quais tentativas entram em N e V (só a grade final? todas as já executadas?).
 - **Alternativas consideradas:** N/V apenas da grade final vs. de todo o log de tentativas.
 - **Sub-decisão pendente:** ddof da variância V entre tentativas (o texto extraído do artigo não especifica).
@@ -210,7 +212,15 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Consequências:** Afeta a validade de PSR/DSR e da PBO.
 
 ### DE-07 — Simulação sem sinal e critério de taxa nominal
-- **Status:** PENDING
+- **Status:** **IN PROGRESS (2026-11-06, ciclo DE-07, Etapa A).** Protocolo v1 **proposto, não congelado**: [docs/DE07_PROTOCOL.md](docs/DE07_PROTOCOL.md). Aguarda as decisões D1–D7 (§10 do protocolo). Nenhuma simulação confirmatória foi executada. Histórico: PENDING até esta data.
+- **Etapa A (2026-11-06), achados:**
+  - **Escala do PSR:** a análise dimensional não encontrou mistura de unidades em nenhum caminho do cálculo (§2.1). A "escala do PSR" da emenda 4 é a proposta de medir o erro de SR₀ em unidades de σ_SR, não um erro de código.
+  - **Causa da calibração dependente da estrutura [fato, fórmula exata testada]:** o PSR padroniza pelo desvio de **um** ŜR, e o DSR o aplica ao máximo. Na equicorrelação com V = E[V entre tentativas] e N = M, P(DSR > 0,95) vai de 0,12% (ρ = 0, M = 144) a 4,98% (ρ = 0,999), **sem passar de α**. A conta reproduz os registros exploratórios (4,22% contra 4,22%; 0,145% contra 0,13%). `core.null_models.dsr_null_rejection_rate_equicorrelated`.
+  - **Identidade de V [fato]:** E[V entre tentativas] = σ²(1 − ρ̄) sob a nula, para qualquer correlação. Explica o desconto duplo dos pares (N efetivo, V entre tentativas).
+  - **N efetivo na grade [fato]:** com ρ ≥ 0,95, E[máx Z] < f(2) = 0,52, então o N implícito não existe. O erro relativo é aposentado como critério decisório.
+  - **Reprodutibilidade [fato]:** a taxa "0–8%" de DSR > 0,95 na grade (DE-04.b) não tem código versionado que a produza. Fica classificada como exploratória.
+  - **Validade de construto:** numa família só comprada, o DSR também rejeita por prêmio de mercado (célula H₁-com do protocolo); insumo do pré-registro, sem alterar DE-01.
+- **Propostas aguardando aprovação:** critério de sucesso 2 → 2a (nível ≤ α por estrutura, Holm), 2b (PSR de configuração pré-especificada com nível exato), 2c (poder); seleção de (N, V) por domínio → validade → maximin de poder, sem "menos ruim"; gerador não nulo com médias específicas persistentes de média transversal zero (δ* ∈ {1; 2,5; 4}, h ∈ {63; 252}); R = 20 000 (nível Z), 1000 (P, H₀), 500 (P, H₁); custo ≈ 6 h com 2 processos, acima do orçamento provisório de DA-07.
 - **Achado descritivo (2026-11-06, `run-de53b361…`):**
   - Sob a nula global, com tentativas **independentes**, M = 100 e T = 1250, a regra DSR > 0,95 rejeitou em só 0,06% das réplicas (V entre tentativas) a 0,13% (V_H0).
   - Isso é coerente com SR₀ = E[máx], que não é o quantil de 95% do máximo [inferência].
@@ -241,6 +251,7 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Evidência (2026-11-06, `run-36aa72b3…`):**
   - Sob a nula, a PBO de **um** conjunto de dados da grade varia muito: percentis 5% / 50% / 95% entre [0,02–0,21] / [0,36–0,61] / [0,76–0,96]. Uma PBO de 0,9 ocorre sem nenhum sinal.
   - "Material" deve ser definida contra a distribuição nula da **própria família**, obtida por simulação pré-registrada, e não contra 0,5.
+- **Nota (2026-11-06, DE-07 Etapa A):** o protocolo v1 proposto (D6) avalia a PBO sem limiar: distribuição nula por família e estrutura, AUC nula × sinal e comparação com o sobreajuste verdadeiro conhecido no simulador. DE-09 continua **PENDING** para os dados reais.
 - **Justificativa:** — (fixar antes de ver resultados)
 
 ### DE-10 — Revisão de literatura

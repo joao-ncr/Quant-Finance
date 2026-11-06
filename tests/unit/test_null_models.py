@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Callable
 
@@ -13,14 +14,17 @@ from frente_e.core.null_models import (
     ar1_correlation,
     block_correlation,
     business_day_calendar,
+    dsr_null_rejection_rate_equicorrelated,
     equicorrelation,
     expected_max_iid_normal,
+    null_cross_variance_factor,
+    prob_max_exceeds_equicorrelated,
     sample_correlation_estimate,
     sample_standardized_null,
     separable_grid_correlation,
     simulate_factor_returns,
 )
-from frente_e.core.sharpe_inference import expected_max_factor
+from frente_e.core.sharpe_inference import deflated_sharpe_ratio, expected_max_factor
 from frente_e.errors import ContractViolationError
 from frente_e.experiments.seeds import generator_for
 
@@ -227,3 +231,110 @@ def test_invalid_factor_parameters() -> None:
 def test_business_day_calendar() -> None:
     days = business_day_calendar("2024-01-05", 3)  # sexta
     assert [str(d) for d in days] == ["2024-01-05", "2024-01-08", "2024-01-09"]
+
+
+# ------------------------------------------ calibração analítica do DSR (DE-07, protocolo v1)
+@pytest.mark.parametrize(
+    "correlation",
+    [
+        equicorrelation(8, 0.6),
+        block_correlation(3, 4, 0.9),
+        ar1_correlation(12, 0.95),
+        separable_grid_correlation(3, 4, 0.9, 0.7),
+    ],
+)
+def test_null_cross_variance_factor_is_one_minus_mean_offdiagonal(correlation: Floats) -> None:
+    m = correlation.shape[0]
+    rho_bar = (correlation.sum() - m) / (m * (m - 1))
+    assert null_cross_variance_factor(correlation) == pytest.approx(1.0 - rho_bar, abs=1e-14)
+    _, variances = sample_standardized_null(
+        correlation, 40_000, generator_for(SEED, 30), chunk=10_000
+    )
+    se = variances.std(ddof=1) / math.sqrt(variances.size)
+    assert abs(variances.mean() - (1.0 - rho_bar)) < 4.0 * se
+
+
+def test_prob_max_exceeds_closed_form_at_zero_correlation() -> None:
+    for m, c in ((1, 1.645), (10, 2.0), (100, 4.0)):
+        expected = 1.0 - float(np.exp(m * np.log(0.5 * math.erfc(-c / math.sqrt(2.0)))))
+        assert prob_max_exceeds_equicorrelated(m, 0.0, c) == pytest.approx(expected, rel=1e-9)
+    # M = 1: a correlação é irrelevante
+    tail = 0.5 * math.erfc(1.645 / math.sqrt(2.0))
+    assert prob_max_exceeds_equicorrelated(1, 0.7, 1.645) == pytest.approx(tail, rel=1e-8)
+
+
+@pytest.mark.parametrize(("m", "rho", "c"), [(16, 0.5, 2.0), (50, 0.9, 1.0), (4, 0.98, 1.5)])
+def test_prob_max_exceeds_agrees_with_monte_carlo(m: int, rho: float, c: float) -> None:
+    maxima, _ = sample_standardized_null(
+        equicorrelation(m, rho), 100_000, generator_for(SEED, 31, m), chunk=20_000
+    )
+    p_mc = float(np.mean(maxima > c))
+    se = math.sqrt(p_mc * (1.0 - p_mc) / maxima.size)
+    assert abs(prob_max_exceeds_equicorrelated(m, rho, c) - p_mc) < 4.0 * se
+
+
+def test_dsr_rejection_rate_matches_direct_monte_carlo_of_the_dsr() -> None:
+    """A função compõe o limiar do DSR com a probabilidade do máximo: confere contra o DSR
+    do projeto aplicado a ŜR = σ·Z simulados, com o mesmo benchmark fixo."""
+    m, rho, t = 20, 0.9, 1250
+    benchmark_z = math.sqrt(1.0 - rho) * float(expected_max_factor(m))
+    sigma = 1.0 / math.sqrt(t - 1)
+    maxima, _ = sample_standardized_null(
+        equicorrelation(m, rho), 100_000, generator_for(SEED, 32), chunk=20_000
+    )
+    dsr = deflated_sharpe_ratio(
+        sigma * maxima,
+        t,
+        0.0,
+        3.0,
+        n_trials=float(m),
+        sharpe_variance=(1.0 - rho) * sigma**2,
+    )
+    p_mc = float(np.mean(dsr > 0.95))
+    se = math.sqrt(p_mc * (1.0 - p_mc) / maxima.size)
+    p = dsr_null_rejection_rate_equicorrelated(m, rho, t, 0.95, benchmark_z)
+    assert abs(p - p_mc) < 4.0 * se
+
+
+def test_dsr_rejection_rate_reproduces_the_recorded_preliminary_values() -> None:
+    """Valores registrados em run-de53b361… (METHODOLOGY_CONVENTIONS §4.5, 200.000 réplicas):
+    independente com V_H0 → 0,13%; equi 0,9 com (M, V entre tentativas) → 4,22%. A forma
+    analítica trata V como fixo, por isso só o caso com V fixo (V_H0) e o de fator dominante
+    (em que a aleatoriedade de V pesa pouco) são comparáveis."""
+    f100 = float(expected_max_factor(100))
+    indep = dsr_null_rejection_rate_equicorrelated(100, 0.0, 1250, 0.95, f100)
+    assert indep == pytest.approx(0.00145, abs=0.0001)
+    equi = dsr_null_rejection_rate_equicorrelated(100, 0.9, 1250, 0.95, math.sqrt(0.1) * f100)
+    assert equi == pytest.approx(0.0422, abs=0.0005)
+
+
+def test_dsr_rejection_with_cross_variance_never_exceeds_alpha_and_tends_to_it() -> None:
+    """Na equicorrelação com V = E[V entre tentativas], a taxa cresce com ρ e tende ao nível
+    (um único teste sobre o componente comum), sem ultrapassá-lo; com V_H0 ela tende a 0."""
+    for m in (4, 16, 144):
+        f = float(expected_max_factor(m))
+        rates = [
+            dsr_null_rejection_rate_equicorrelated(m, rho, 6049, 0.95, math.sqrt(1 - rho) * f)
+            for rho in (0.0, 0.5, 0.9, 0.98, 0.999)
+        ]
+        assert all(a < b for a, b in itertools.pairwise(rates))
+        assert rates[-1] < 0.05
+        assert rates[-1] > 0.049
+        h0 = [
+            dsr_null_rejection_rate_equicorrelated(m, rho, 6049, 0.95, f)
+            for rho in (0.0, 0.9, 0.999)
+        ]
+        assert h0[0] > h0[1] > h0[2]
+
+
+def test_dsr_rejection_rate_domain() -> None:
+    with pytest.raises(ContractViolationError):
+        dsr_null_rejection_rate_equicorrelated(10, 0.5, 2, 0.95, 1.0)
+    with pytest.raises(ContractViolationError):
+        dsr_null_rejection_rate_equicorrelated(10, 0.5, 100, 0.4, 1.0)
+    with pytest.raises(ContractViolationError):
+        dsr_null_rejection_rate_equicorrelated(10, 0.5, 100, 0.95, -1.0)
+    with pytest.raises(ContractViolationError):
+        prob_max_exceeds_equicorrelated(0, 0.5, 1.0)
+    with pytest.raises(ContractViolationError):
+        prob_max_exceeds_equicorrelated(5, 1.0, 1.0)

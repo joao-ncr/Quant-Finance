@@ -147,6 +147,7 @@ flowchart LR
 - **Conclusão quando:** a taxa observada e seu intervalo de Monte Carlo estão registrados e comparados com o nível nominal segundo o critério pré-fixado. Um resultado fora da tolerância é um **achado**, não um bug a ser "ajustado": investigar e documentar.
 - **Testes:** reprodutibilidade por semente; sanidade em casos-limite (N=1).
 - **Riscos:** custo computacional (gatilho para Numba); a primeira versão usa gerador simples (sem caudas pesadas, que estão fora do escopo).
+- **Estado (2026-11-06):** protocolo v1 **proposto** em [DE07_PROTOCOL.md](DE07_PROTOCOL.md) (Etapa A do ciclo DE-07). O critério de sucesso 2 é reformulado como validade + calibração do PSR + poder (D1), com desenho não nulo (D4) e R por célula (D5). Aguarda aprovação; as Etapas B (implementação) e C (execução confirmatória) não começam antes do congelamento.
 
 ## Etapa 9 — Motor de momentum
 - **Objetivo:** Retornos T × N da grade, sem look-ahead.

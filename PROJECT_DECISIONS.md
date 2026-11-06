@@ -261,15 +261,30 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
   - período pós-Plano Real (candidato: 2000 até o último ano completo).
 - **Para fechar:** a auditoria DD-02 precisa confirmar, usando só presença e volume (nunca retornos), que há ≥ 60 emissores elegíveis em todas as datas, os códigos do layout e a presença de ativos deslistados. Se faltar, encurta-se o período; U2 não é reduzido.
 - Detalhes em METHODOLOGY_CONVENTIONS.md §6.6.
+- **Auditoria (2026-11-06, docs/COTAHIST_AUDIT.md; só presença e volume, sem preços):**
+  - ≥ 60 emissores elegíveis em **todos** os 312 fins de mês de 2000-01 a 2025-12 (mínimo de 68, em 2002-07; mediana de 186). **U1/U2 são viáveis**, com folga pequena em 2001–2003.
+  - Recomendações para aprovação:
+    - BDI 02 **+ regimes especiais**: só 02 tira as ações em recuperação judicial do universo; 123 ISINs passam pelos dois;
+    - exigir **negócio em t** para pertencer ao universo: a brecha é que um instrumento pode ser membro depois do último negócio;
+    - período de formações de 2000-01 a 2025-12.
+  - **Status inalterado: IN PROGRESS**, aguardando aprovação.
 - **Contexto e problema:** "Universo pequeno de ações líquidas". Liquidez também é variável de análise da pergunta.
 - **Alternativas consideradas:** volume financeiro médio; presença em pregões; participação em índice (risco de viés de seleção); universo point-in-time revisado periodicamente.
 
 #### DD-02 — Auditoria do COTAHIST (viés de sobrevivência)
-- **Status:** PENDING
+- **Status:** **IN PROGRESS (auditoria de elegibilidade concluída em 2026-11-06; falta a parte de eventos).** Histórico: PENDING.
+- **Achados** (docs/COTAHIST_AUDIT.md):
+  - os arquivos históricos incluem instrumentos hoje inexistentes (159 de 259 membros de U1/U2 pararam de negociar antes do fim da base), então o universo é reconstruível ponto no tempo;
+  - o COTAHIST **não distingue** deslistagem de reorganização (ex.: AMBV4 → ABEV3), o que exige DD-03/DA-10;
+  - 14 ISINs têm mais de um ticker e 7 tickers têm mais de um ISIN;
+  - o arquivo de 2025 declara no trailer só as cotações, contrariando o layout; a convenção é aceita e registrada;
+  - 89 registros de ações têm ESPECI malformado (parênteses ou aspas) e ficam excluídos pela regra de token, pendente de decisão.
+- Bruto em `data/raw/cotahist/` (596 MB, 1999–2025); manifesto `data/manifests/cotahist.json`.
 - **Contexto e problema:** Confirmar se ativos deslistados estão presentes e como reconstruir o universo histórico.
 
 #### DD-03 — Proventos e desdobramentos
 - **Status:** PENDING
+- **Nota (2026-11-06):** a auditoria mostrou que muitos membros do universo deixam de negociar por reorganizações que o COTAHIST não identifica. A fonte de eventos também precisa resolver o valor terminal de DE-01.d (incorporações, trocas de classe e OPAs).
 - **Contexto e problema:** COTAHIST traz cotações brutas. Ajuste não pode introduzir look-ahead.
 - **Alternativas consideradas:** fator de ajuste a partir de eventos corporativos da B3; fonte externa de preços ajustados (com auditoria); retorno total calculado evento a evento.
 

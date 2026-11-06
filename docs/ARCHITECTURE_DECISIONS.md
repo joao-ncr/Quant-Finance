@@ -152,6 +152,12 @@ Legenda de evidência: [E] documental · [M] prática de mercado · [R] recomend
 - **Decisão:** (a), preservando **todas** as colunas do layout no bruto tipado. `rb3` como checagem cruzada (B1). (c) rejeitado como fonte primária: ajuste opaco, risco de sobrevivência e de look-ahead não auditáveis.
 - **Justificativa:** O layout é público e estável (revisões 2017 e 2020 [E]); um parser de largura fixa é pequeno e testável. A API do `rb3` mudou entre versões [E].
 - **Consequências:** − Implementar e testar o parser contra o layout (incluindo o registro header/trailer). − Confirmar no layout a revisão vigente e o campo de fator de cotação.
+- **Registro de implementação (2026-11-06):**
+  - `frente_e.data.cotahist`: leitor em largura fixa com *dtype* estruturado do NumPy (sem dependência nova), leitura em blocos e validação de header, trailer, terminadores e tipos;
+  - o layout v2.0 foi conferido visualmente;
+  - obtenção imutável com manifesto (DA-04), sem dependência de `experiments`;
+  - **desvio:** o bruto tipado em Parquet (todas as colunas) foi **adiado** para a normalização, porque a auditoria lê os zips diretamente e Parquet exigiria Polars/pyarrow sem necessidade atual;
+  - o `rb3` ainda não foi usado como checagem cruzada (B1 pendente).
 
 ## DA-10 — Representação de eventos corporativos e retornos
 - **Status:** IN PROGRESS (fonte dos eventos: **PENDING**, DD-03)

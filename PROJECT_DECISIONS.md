@@ -25,7 +25,30 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 ## A. Decisões estatísticas
 
 ### DE-01 — Regra de momentum e grade de parâmetros
-- **Status:** PENDING
+- **Status:** **DECIDED (2026-11-06), regra A–D; não implementada.** Histórico: PENDING até esta data. Decidida **antes de qualquer dado real**: o ledger tem só uma execução sintética. Especificação completa em METHODOLOGY_CONVENTIONS.md §6.
+- **Definição:**
+  - momentum cross-sectional, só comprado: tercil superior dos elegíveis pelo retorno total de j meses (21·j pregões), formado no último pregão do mês, sem *skip*;
+  - execução no fechamento do pregão seguinte;
+  - k coortes sobrepostas com 1/k do capital cada e pesos iguais;
+  - excesso `r_p − CDI`;
+  - custos zero no primário, com giro reportado;
+  - preço defasado só para avaliar posições, nunca para sinal ou execução;
+  - deslistagem pelo valor terminal documentado, com limites de sensibilidade.
+- **Grade:** j, k ∈ {1, …, 12} meses (F144), com subfamílias aninhadas F4 = {6, 12}² e F16 = {3, 6, 9, 12}² (grade de Jegadeesh e Titman 1993) para a variação com N. Fixada antes dos dados e não ampliável.
+- **Alternativas descartadas:**
+  - série temporal (MOP 2012): desenhada para futuros e dependente de ponderação por volatilidade, que Kim, Tse e Wald (2016) apontam como fonte do resultado;
+  - long-short: custo e restrições de aluguel na B3, e excesso ambíguo (DE-02, ressalva 1);
+  - dimensões adicionais (quantil, skip, pesos), que inflariam N sem servir à pergunta.
+- **Consequências:**
+  - resolve a ressalva 1 de DE-02 (long-only ⇒ excesso bem definido) e o *timing* de DD-04;
+  - H_max = 252 pregões alimenta a regra de S;
+  - permite gerar a correlação da grade com preços sintéticos para escolher o estimador de N efetivo.
+- **Limitações:**
+  - o retorno mistura mercado e momentum;
+  - sem custos, k curto fica favorecido;
+  - a evidência brasileira é mista e só foi lida em resumos (DE-10);
+  - a grade e a sobreposição de JT foram citadas sem leitura do texto integral.
+- **Contexto original:**
 - **Contexto e problema:** O documento de partida define só "momentum com grade de janelas de formação e de manutenção". O tamanho da grade é N, uma das variáveis da pergunta de pesquisa.
 - **Alternativas consideradas:** momentum de série temporal vs. cross-sectional; long-only vs. long-short; sinal em retorno bruto vs. em excesso ao CDI; com ou sem "skip" do período mais recente; grades de tamanhos diferentes para estudar a variação com N.
 - **Justificativa:** —
@@ -202,12 +225,20 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Status:** PENDING
 - **Contexto e problema:** Se já existir aplicação sistemática de DSR/PBO à B3, o plano é migrar para a Frente A.
 - **Nota (2026-11-06):** segundo o desenvolvedor, a revisão preliminar concluiu que a metodologia DSR/PBO é aplicável ao problema. A pergunta específica (se já existe aplicação sistemática à B3) continua sem registro de resposta.
+- **Nota (2026-11-06):** uma busca preliminar só por resumos encontrou evidência brasileira **mista** sobre momentum: Bonomo e Dall'Agnol (2003) e Fonte e Carmona (2005) rejeitam o efeito; Mussa et al. (2008) replicam JT; trabalhos mais recentes reportam o efeito em alguns períodos. Nenhum desses resumos menciona DSR ou PBO, mas isso **não** responde à pergunta de DE-10, que exige uma revisão própria.
 - **Consequências:** Bloqueia investimento grande em implementação.
 
 ### Decisões de dados (estatísticas)
 
 #### DD-01 — Universo e filtro de liquidez
-- **Status:** PENDING
+- **Status:** **IN PROGRESS (proposta concreta, 2026-11-06).** Histórico: PENDING.
+- **Proposta:**
+  - ações do mercado à vista, lote padrão, uma classe por emissor (a mais negociada);
+  - liquidez = volume financeiro médio dos 252 pregões anteriores, com presença ≥ 95%;
+  - dois universos ponto no tempo: **U1** (postos 1–30) e **U2** (postos 31–60), estudados separadamente, sem seleção entre eles;
+  - período pós-Plano Real (candidato: 2000 até o último ano completo).
+- **Para fechar:** a auditoria DD-02 precisa confirmar, usando só presença e volume (nunca retornos), que há ≥ 60 emissores elegíveis em todas as datas, os códigos do layout e a presença de ativos deslistados. Se faltar, encurta-se o período; U2 não é reduzido.
+- Detalhes em METHODOLOGY_CONVENTIONS.md §6.6.
 - **Contexto e problema:** "Universo pequeno de ações líquidas". Liquidez também é variável de análise da pergunta.
 - **Alternativas consideradas:** volume financeiro médio; presença em pregões; participação em índice (risco de viés de seleção); universo point-in-time revisado periodicamente.
 
@@ -221,7 +252,7 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Alternativas consideradas:** fator de ajuste a partir de eventos corporativos da B3; fonte externa de preços ajustados (com auditoria); retorno total calculado evento a evento.
 
 #### DD-04 — Alinhamento temporal preços × CDI
-- **Status:** IN PROGRESS (parte do CDI). Proposta em METHODOLOGY_CONVENTIONS.md §1.3: a taxa datada em d remunera até o próximo dia útil, e o intervalo de pregões (t₋₁, t] compõe o CDI das datas [t₋₁, t), com erro explícito se houver desalinhamento. Implementado e testado em `core.rates`. Timing do sinal (fechamento t → posição t+1) segue PENDING (DE-01).
+- **Status:** IN PROGRESS (parte do CDI). Proposta em METHODOLOGY_CONVENTIONS.md §1.3: a taxa datada em d remunera até o próximo dia útil, e o intervalo de pregões (t₋₁, t] compõe o CDI das datas [t₋₁, t), com erro explícito se houver desalinhamento. Implementado e testado em `core.rates`. Timing do sinal: **DECIDED em DE-01 (2026-11-06)**: sinal no fechamento do último pregão do mês t, execução no fechamento de t+1, retorno da posição a partir de (t+1, t+2].
 - **Contexto e problema:** Calendários, convenção de taxa diária do CDI, timing do sinal (fechamento t → posição t+1).
 
 #### DD-05 — Política de retornos ausentes

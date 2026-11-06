@@ -369,3 +369,11 @@ Outras correções desta sessão:
 - **Erro tipográfico no artigo da PBO:** a p. 11 diz que S = 16 gera "12, 780" combinações; o correto é C(16, 8) = 12.870.
 - **Reprodutibilidade do estudo de simulação:** o fluxo aleatório de cada estrutura dependia da ordem do dicionário, e o JSON canônico do ledger reordena as chaves. O teste de reconstrução a partir do ledger detectou o defeito, que foi corrigido usando a ordem canônica.
 - **Galwey** não é Lipschitz em λ = 0: autovalores nulos de arredondamento (≈1e-16) viram ≈1e-8 no resultado. Isso está documentado e tem teste com tolerância derivada.
+
+---
+
+## Adenda 2 — Etapa B (2026-11-06)
+- **DE-05.a validada por caso discriminante:** o golden `pbo_odd` (N = 9) separa as convenções. Em S = 8 e 12, o φ do artigo (0,1571 e 0,1050) difere do φ do `pbo` (0,1429 e 0,0942), e a diferença é exatamente a fração de partições com rank OOS = (N+1)/2. A implementação própria segue o artigo (METHODOLOGY_CONVENTIONS.md §5.7).
+- **Correção da §5.5:** a afirmação de que o custo da CSCV seria "trivial" supunha somas por bloco. A implementação direta mede 131 s com S = 16 e N = 144, e um gatilho de otimização ficou registrado.
+- **DE-01 formalizada** (§6): resolve a ressalva 1 de DE-02 (long-only) e o *timing* de DD-04. Os insumos para S, N efetivo, embargo e o desenho não nulo estão em §6.7.
+

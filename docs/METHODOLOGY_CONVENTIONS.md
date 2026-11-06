@@ -8,6 +8,8 @@ Especificação formal das convenções estatísticas e da política de ausênci
 - §4 (N efetivo e V): protocolo `DECIDED`; o estimador principal e a escolha definitiva de V continuam **abertos**.
 - §5 (CSCV/PBO, DE-05, S e DE-06): convenções `DECIDED`. **Implementadas e validadas em 2026-11-06 (Etapa B; §5.7).** O valor de S é fixado por regra no pré-registro; o embargo está em aberto, com critério.
 
+- §6 (DE-01, família de momentum): regra **DECIDED** (2026-11-06), **ainda não implementada**; universo (DD-01) é proposta.
+
 O código em `src/frente_e/core/metrics.py`, `core/rates.py` e `core/sharpe_inference.py` implementa **exatamente** a §1. Qualquer mudança deve alterar este documento, o código e os testes juntos.
 
 Categorias de estado usadas abaixo: *implementado* · *testado* · *validado matematicamente* · *validado por referência independente* · *pendente de decisão* · *pendente de dados*.
@@ -423,3 +425,152 @@ Distinções [inferência, a partir da construção do estudo]:
 - **Regra de construção (DECIDED):** a matriz M tem retornos **diários realizados**, posições definidas com informação até t−1 e um calendário comum que começa **depois da janela de formação mais longa da grade**. Assim todas as configurações têm sinal em todas as linhas. Isso torna a purga desnecessária.
 - **Embargo: não adotado, em aberto com critério.** Será adotado se, na simulação da grade de momentum com preços sintéticos sem sinal (após DE-01), a PBO média se afastar de forma sistemática do valor obtido com retornos de configurações independentes, além do erro de Monte Carlo. Esse afastamento é a consequência observável de dependência IS/OOS. O tamanho do embargo seria então o maior lag de autocorrelação relevante.
 - **Fora do escopo:** correções de autocorrelação no PSR (ver a ressalva 2 de DE-02).
+
+---
+
+## 6. DE-01 — Família de momentum (formalização, 2026-11-06)
+
+**Estado:** regra (A–D) **DECIDED**. Universo (E, DD-01) é **proposta** com valores concretos, a fechar depois da auditoria do COTAHIST (DD-02). Essa auditoria usa só presença e volume, nunca retornos. Período e deslistagem dependem da mesma auditoria. **Nenhum dado real foi lido**: o ledger tem uma única execução, sintética.
+
+**Marcas de evidência:**
+- [lit.] literatura;
+- [lit., não conferido] atribuição conhecida, sem leitura do texto integral nesta sessão;
+- [operacional] escolha do projeto, sem fonte;
+- [hipótese] a validar.
+
+### 6.0 Fontes e o que elas sustentam
+| Fonte | O que se usa | Status |
+|---|---|---|
+| Jegadeesh e Titman (1993), JF 48(1) | momentum **cross-sectional**; grade de formação J e manutenção K de 3, 6, 9 e 12 meses; carteiras **sobrepostas** (K coortes); variante com intervalo de uma semana | [lit., não conferido]: a busca confirmou o artigo e o desenho por decis, não a grade J × K nem a sobreposição |
+| Moskowitz, Ooi e Pedersen (2012), JFE 104(2) | momentum de **série temporal**: 12 meses, manutenção de 1 mês, ponderação por volatilidade; persistência de 1 a 12 meses com reversão parcial depois | [lit.] resumo e descrições secundárias |
+| Kim, Tse e Wald (2016) | o resultado do momentum de série temporal se deve sobretudo à ponderação por volatilidade | [lit.] resumo secundário |
+| Brasil: Bonomo e Dall'Agnol (2003), Fonte e Carmona (2005), Mussa et al. (2008), Civiletti, Campani e Roquete (carteiras long-only igualmente ponderadas de vencedoras) e outros | evidência **mista**: o efeito aparece ou some conforme período e método | [lit., não conferido]: só resumos via busca (DE-10) |
+
+A evidência brasileira mista **reforça** a pergunta do projeto: resultados que dependem do período e do método são o cenário em que a seleção entre variantes infla o desempenho.
+
+### 6.1 Escolha da variante (DECIDED)
+**Momentum cross-sectional, só comprado (long-only), carteira de vencedoras com pesos iguais, financiada pelo CDI.**
+
+Alternativas descartadas:
+- **Série temporal (MOP):**
+  - foi documentada para futuros de várias classes de ativos, não para ações individuais;
+  - depende de ponderação por volatilidade, que acrescenta parâmetros (janela de volatilidade, alvo) e, segundo Kim, Tse e Wald, é o que gera o resultado;
+  - com posições vendidas, exige aluguel de ações na B3.
+- **Long-short vencedoras − perdedoras (JT):**
+  - na B3, a venda a descoberto tem custo de aluguel e restrições não modeladas;
+  - o retorno autofinanciado já é um excesso, o que reabriria a ressalva 1 de DE-02;
+  - no desenho adotado, essa ressalva fica **resolvida**: carteira comprada e financiada por caixa ⇒ `e_t = r_p,t − r_f,t`.
+
+Consequências e limitações:
+- O retorno mistura prêmio de mercado e momentum [inferência].
+- As configurações terão um fator comum forte (o mercado), e portanto correlação alta entre si. Isso é relevante para N efetivo e para V (§4.5 mostrou que um fator comum encolhe a variância entre tentativas). É uma característica real do problema, não um defeito.
+
+### 6.2 A — Sinal (DECIDED)
+- **Data de formação t:** último pregão de cada mês do calendário da B3.
+- **Sinal:**
+  - `s_i(t) = TR_i(t) / TR_i(t − J) − 1`, com TR o índice de retorno total (DA-10/DD-03) no fechamento e J em **pregões** (`J = 21·j`, j em meses);
+  - a data t − J é o pregão J posições antes de t.
+- **Elegibilidade em t:** ação no universo em t (DD-01, ponto no tempo) **e** com negócio em t **e** em t − J.
+  - O sinal só usa preços de negócios reais, sem preço defasado (DE-01.e).
+  - Não se cria parâmetro de idade máxima de preço: no universo líquido, a falta de negócio é exceção, e cada exclusão é contada no relatório de qualidade.
+- **Intervalo entre formação e manutenção (*skip*): 0** [operacional].
+  - A variante com intervalo ("12−1") é conhecida [lit., não conferido], mas não entra como dimensão da grade, para não multiplicar N.
+  - Limitação: a reversão de curto prazo pode afetar J = 1 mês.
+- **Sem look-ahead:**
+  - sinal e universo usam dados até o fechamento de t;
+  - a ordem é executada no **fechamento de t+1** (1 pregão de defasagem), e o retorno da posição começa no intervalo (t+1, t+2];
+  - isso fecha a parte de *timing* de DD-04 e evita executar no mesmo preço que gerou o sinal.
+
+### 6.3 B — Grade (DECIDED)
+- **Família completa F144:** j ∈ {1, …, 12} meses de formação × k ∈ {1, …, 12} meses de manutenção.
+  - Mês = 21 pregões na formação; na manutenção, k fechamentos de mês.
+- **Subfamílias aninhadas, para a variação com N** (pergunta de pesquisa):
+
+| Família | j, k | N | Fundamento |
+|---|---|---|---|
+| F4 | {6, 12} × {6, 12} | 4 | o mínimo de uma "grade" |
+| F16 | {3, 6, 9, 12} × {3, 6, 9, 12} | 16 | a grade de JT (1993) [lit., não conferido] |
+| F144 | {1, …, 12} × {1, …, 12} | 144 | todos os meses do horizonte de persistência de 1 a 12 meses (MOP) |
+
+  F4 ⊂ F16 ⊂ F144. Cada família é tratada como um pesquisador que testou N variantes; M = N da família (DE-04.a).
+- **Por que parar em 12 meses:** além desse horizonte a literatura descreve reversão [lit.]; seria outra família.
+- **Por que passo mensal:** é a granularidade do rebalanceamento. Passos menores criariam configurações quase idênticas, o que infla M sem informação nova.
+- **Dimensões fixas** (fora da grade, para N ser interpretável):
+  - quantil: tercil superior;
+  - pesos: iguais;
+  - skip: 0;
+  - defasagem: 1 pregão;
+  - custos: 0 (§6.5).
+- A grade foi fixada **antes** de qualquer dado e não pode ser ampliada depois (CLAUDE.md §0).
+
+### 6.4 C — Formação e manutenção (DECIDED)
+- **Coorte.** Em cada data de formação, forma-se uma coorte com o tercil superior dos elegíveis por `s_i(t)`.
+  - Tamanho: `⌈n_elegíveis/3⌉` ações.
+  - Empate na fronteira: resolvido pelo identificador do ativo, de forma determinística e contada.
+- **Manutenção.** A coorte entra no fechamento de t+1 e sai no fechamento do pregão seguinte ao k-ésimo fim de mês após t.
+- **Sobreposição, como em JT [lit., não conferido]:**
+  - a carteira mantém k coortes simultâneas, cada uma com 1/k do capital;
+  - dentro da coorte, pesos iguais;
+  - peso agregado `w_i,t = (1/k)·Σ_coortes 1{i ∈ c}/|c|`;
+  - a mesma ação em várias coortes soma pesos.
+- **Pesos constantes entre rebalanceamentos**, ou seja, rebalanceamento diário implícito para o alvo [operacional].
+  - Alternativa descartada: comprar e manter dentro da coorte. É mais realista quanto ao giro, mas exige rastrear frações por coorte.
+  - A diferença afeta o nível do retorno, não a mecânica de seleção estudada [inferência].
+- **Aquecimento.** A matriz M começa no primeiro pregão em que **todas** as 144 configurações têm k coortes completas: 12 meses de janela de liquidez/formação mais 12 meses de manutenção, ou seja, 24 meses depois do início dos dados. Todas as configurações compartilham o mesmo calendário (DE-06, regra de construção).
+
+### 6.5 D — Retornos da estratégia (DECIDED)
+- `r_p,t = Σ_i w_i,t · r_i,t`, com `r_i,t` o retorno total diário (DA-10). Os pesos vigentes no dia t são os definidos na execução anterior.
+- **Excesso:** `e_t = r_p,t − r_f,t`, com o CDI do intervalo (§1.3). A carteira está sempre totalmente investida, com caixa só no caso abaixo.
+- **Dias sem negócio** (DE-01.e da revisão, agora DECIDED):
+  - ativo mantido sem negócio no dia: avaliado pelo último preço (retorno 0 no dia), com o retorno acumulado realizado no próximo negócio; sinalizado e contado por configuração;
+  - compra de ativo sem negócio no dia da execução: o peso fica em caixa (rende CDI) até o primeiro negócio;
+  - venda de ativo sem negócio: o ativo continua na carteira até o primeiro negócio.
+  - Proibido: preço defasado para sinal ou para execução.
+- **Deslistagem** (DE-01.d, procedimento DECIDED, regra final depois da contagem em DD-02):
+  - o valor terminal documentado por evento (preço da OPA, relação de troca, liquidação) entra na data efetiva, pela tabela de eventos (DA-10);
+  - casos sem documentação são reportados com os limites "último preço" e "−100%" como sensibilidade.
+- **Custos: zero no resultado primário** [operacional].
+  - Justificativa: a pergunta é a deflação estatística por seleção, não a lucratividade líquida.
+  - Limitação: configurações com k curto giram mais e ficam favorecidas sem custos. O **giro** de cada configuração é reportado.
+  - Uma sensibilidade com custo proporcional simples pode ser pré-registrada, mas não muda N, porque não é uma escolha entre variantes.
+- **Liquidez e impacto:** não modelados. A restrição ao universo líquido é a mitigação.
+
+### 6.6 E — Universo (DD-01: PROPOSTA)
+- **Instrumentos:**
+  - ações (ON, PN, classes PN, units) do mercado à vista, lote padrão;
+  - excluídos: fracionário, BDR, fundos (FII, ETF), direitos, opções e termo.
+  - Os códigos do COTAHIST (TPMERC, CODBDI, ESPECI) serão fixados na auditoria contra o layout oficial.
+- **Uma classe por emissor:** a mais negociada em cada data de formação, para não ter PETR3 e PETR4 na mesma coorte. O emissor é identificado pelo ISIN, a confirmar na auditoria.
+- **Medida de liquidez:** volume financeiro médio diário nos 252 pregões anteriores a t, com presença em ≥ 95% deles.
+  - É baseada em **posto** na data, o que neutraliza inflação e mudanças de escala nominal.
+  - Os valores 252 e 95% são [operacional].
+- **Liquidez como variável de análise:** dois universos disjuntos em cada t.
+  - **U1:** emissores com postos 1–30.
+  - **U2:** postos 31–60.
+  - Cada família é estudada em cada universo **separadamente**, e M é contado por família e universo. Não há seleção entre universos (fecha o "aberto" de §4.1).
+- **Sobrevivência:**
+  - o universo é reconstruído **ponto no tempo** a partir de todos os arquivos anuais do COTAHIST;
+  - ativos deslistados entram enquanto foram negociados [hipótese: confirmar em DD-02 que os arquivos históricos incluem ativos hoje inexistentes];
+  - a saída segue §6.5.
+- **Período:** posterior ao Plano Real, evitando mudanças de unidade monetária. O início candidato é 2000 e o fim é o último ano completo; fixar em DD-01.
+- **Fechar DD-01 exige:**
+  - contagem anual de emissores elegíveis, que precisa permitir 60 em todas as datas;
+  - estabilidade dos postos;
+  - códigos do layout.
+  - Se houver menos de 60 elegíveis em algum período, a alternativa pré-definida é encurtar o período, **nunca** reduzir U2 para caber.
+- **Limitações do COTAHIST:**
+  - preços brutos (DD-03);
+  - sem eventos corporativos;
+  - sem causa nem valor de deslistagem;
+  - mudanças de ticker;
+  - ausência de negócio é inferida, não registrada (§2).
+
+### 6.7 O que esta definição destrava (sem implementar)
+| Decisão futura | Insumo agora disponível | Próximo passo |
+|---|---|---|
+| **S** (§5.5) | H_max = 12 meses = 252 pregões ⇒ bloco ≥ max(63, 252) = 252. Ilustração, não decisão: dados de 2000 a 2025 (≈ 6550 pregões) menos 24 meses de aquecimento ≈ 6050 ⇒ S = 16 dá blocos de ≈ 378 ≥ 252 | fixar no pré-registro com o T real |
+| **N efetivo** (§4.2) | a estrutura de correlação da família pode ser gerada **sem dados reais**: aplicar F144 a preços sintéticos sem sinal para 60 ativos (com fator de mercado comum, coerente com §6.1) e calcular a correlação entre as 144 séries | implementar a regra de carteira e rodar o critério de §4.2 e §4.5 com essas estruturas |
+| **Embargo** (§5.6) | com pesos definidos até t e coortes sobrepostas, sob a nula o retorno da estratégia é diferença de martingal [inferência] | simular a PBO da grade sem sinal e comparar com configurações independentes |
+| **Desenho não nulo** (DE-07, DE-04.b) | o sinal plantável é a persistência cross-sectional de retornos | desenhar o processo gerador e o critério de "taxa nominal" (§4.5, leitura 5) |
+| **Pré-registro** | regra, grade, famílias, universos e timing definidos | fechar DD-01, DD-02, DD-03, DD-05 e o valor de S |
+| **Custo computacional** | 2 universos × 3 famílias de CSCV; F144 com S = 16 leva ≈ 131 s (§5.5) | cabe no orçamento |

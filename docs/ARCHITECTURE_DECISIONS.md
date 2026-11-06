@@ -20,6 +20,12 @@ Legenda de evidência: [E] documental · [M] prática de mercado · [R] recomend
 - **Consequências:** + um só ambiente e um só deploy local; + núcleo testável isoladamente. − A disciplina de camadas depende de revisão (não há fronteira física).
 - **Reavaliar se:** surgirem execuções agendadas recorrentes ou múltiplos usuários.
 
+**Registro de implementação (2026-11-06, Etapa B):** a CSCV/PBO seguiu as camadas propostas.
+- `core.cscv` é puro: sem I/O nem RNG; o teste de arquitetura cobre o arquivo.
+- `experiments.cscv_input` contém a regra que depende de pré-registro (descarte DE-05.b) e a serialização para o ledger.
+- Nenhuma camada nova foi criada; `ReturnsMatrix` e `sharpe_ratio` foram reutilizados.
+- **Controle de versão:** desde esta etapa, cada etapa concluída é commitada localmente, sem push (pedido do desenvolvedor). Commit de referência da fundação e da Etapa A: `d7ba543`.
+
 ## DA-02 — Linguagem principal e complementares
 - **Status:** IN PROGRESS
 - **Contexto:** Comparação completa em STACK_EVALUATION §2–4.

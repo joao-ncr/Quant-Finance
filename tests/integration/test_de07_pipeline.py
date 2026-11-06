@@ -557,3 +557,78 @@ def test_gaussian_cell_matches_the_analytic_rejection_rate() -> None:
     p = dsr_null_rejection_rate_equicorrelated(8, 0.5, 500, 0.95, float(expected_max_factor(8)))
     assert abs(k / 40_000 - p) < 4 * math.sqrt(p * (1 - p) / 40_000)
     assert out["pairs"]["raw+v_h0"]["true_discoveries"] == 0
+
+
+# ------------------------------------------------------------------ gerador do manifesto (B3)
+def _fake_calibration() -> dict[str, Any]:
+    def entry(signal: dict[str, float], hyp: str) -> dict[str, Any]:
+        return {
+            "hypothesis": hyp,
+            "signal": signal,
+            "truth": {"config_ids": F144, "true_sharpe": [0.01] * 144, "n_rows": 6049},
+        }
+
+    cells = {
+        f"mom_h{h}_d{d:g}": entry(
+            {"half_life": float(h), "scale": 0.001 * d, "premium": 0.0}, "H1-mom"
+        )
+        for h in (63, 252)
+        for d in (1, 2.5, 4)
+    }
+    cells["com_d2.5"] = entry({"half_life": 252.0, "scale": 0.0, "premium": 0.0003}, "H1-com")
+    return {"grids": {}, "cells": cells}
+
+
+def _build(tmp_path: Path) -> tuple[Path, Path]:
+    from frente_e.experiments import de07_build_manifest as builder
+
+    (tmp_path / "docs").mkdir(exist_ok=True)
+    (tmp_path / "configs" / "studies").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "docs" / "DE07_PROTOCOL.md").write_text("protocolo\n", encoding="utf-8")
+    return builder.build(
+        project_root=tmp_path,
+        calibration=_fake_calibration(),
+        calibration_run_id="run-" + "0" * 32,
+        calibration_seed=3,
+        calibration_sha256="a" * 64,
+        code_commit="abc123",
+        seeds={"gaussian": 1, "momentum": 2},
+        version=1,
+        out_dir=tmp_path / "configs" / "studies",
+    )
+
+
+def test_manifest_builder_is_deterministic_and_respects_d5_and_budget(tmp_path: Path) -> None:
+    manifest_path, truth_path = _build(tmp_path)
+    first = (manifest_path.read_bytes(), truth_path.read_bytes())
+    _build(tmp_path)
+    assert (manifest_path.read_bytes(), truth_path.read_bytes()) == first
+    manifest = man.load_manifest(manifest_path.relative_to(tmp_path), project_root=tmp_path)
+    assert manifest.phase == "confirmatory"
+    assert manifest.estimated_hours() <= 2.0
+    cells = manifest.cells
+    by_level = {(c["level"], c["hypothesis"]): int(c["replicates"]) for c in cells}
+    assert by_level == {
+        ("gaussian", "H0"): 20_000,
+        ("gaussian", "H1-gauss"): 20_000,
+        ("momentum", "H0"): 1000,
+        ("momentum", "H1-mom"): 500,
+        ("momentum", "H1-com"): 500,
+    }
+    # cobertura dos objetivos da Etapa B3 (1–7)
+    gaussian_null = [c for c in cells if c["level"] == "gaussian" and c["hypothesis"] == "H0"]
+    assert len(gaussian_null) == 18  # (1, 2) estruturas de dependência
+    assert {
+        c["scenario"] for c in cells if c.get("hypothesis") == "H0" and c["level"] == "momentum"
+    } == {"base", "vol_clustering"}
+    mom = [c for c in cells if c["hypothesis"] == "H1-mom"]
+    assert {(c["signal"]["half_life"], c["truth_key"]) for c in mom} == {
+        (float(h), f"mom_h{h}_d{d:g}") for h in (63, 252) for d in (1, 2.5, 4)
+    }  # (4) intensidades e persistências
+    assert any(c["hypothesis"] == "H1-com" for c in cells)  # (5) prêmio sem momentum
+    assert all(c["cscv_families"] for c in cells if c["level"] == "momentum")  # (6, 7) PBO
+    assert set(manifest.evaluation["power_cells"]) <= {c["id"] for c in mom}
+    # protocolo alterado depois do congelamento: o manifesto deixa de verificar
+    (tmp_path / "docs" / "DE07_PROTOCOL.md").write_text("alterado\n", encoding="utf-8")
+    with pytest.raises(ContractViolationError, match="SHA-256"):
+        man.load_manifest(manifest_path.relative_to(tmp_path), project_root=tmp_path)

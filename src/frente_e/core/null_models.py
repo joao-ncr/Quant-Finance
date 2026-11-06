@@ -131,3 +131,56 @@ def expected_max_iid_normal(n: float) -> float:
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ContractViolationError(message)
+
+
+# ------------------------------------------------------------- painel de ativos sem sinal
+def simulate_factor_returns(
+    n_obs: int,
+    rng: np.random.Generator,
+    *,
+    mean: float,
+    market_vol: float,
+    betas: FloatArray,
+    idiosyncratic_vols: FloatArray,
+    vol_persistence: float,
+    vol_of_vol: float,
+) -> FloatArray:
+    """Retornos simples diários ``r_i,t = mean + β_i·σ_t·u_t + s_i·σ_t/σ̄·ε_i,t``, sem sinal.
+
+    - ``u``, ``ε`` normais padrão independentes no tempo e entre ativos: **nenhum retorno
+      passado prevê o futuro** (média constante), então sob qualquer regra que use só o
+      passado o retorno esperado em excesso de ``mean`` é zero.
+    - Dependência cross-sectional: fator de mercado comum (β_i) e volatilidades
+      idiossincráticas heterogêneas (s_i).
+    - Dependência temporal **só na variância**: ``log σ_t = log market_vol + h_t``,
+      ``h_t = φ·h_{t−1} + η_t``, com η ~ N(0, vol_of_vol²); o mesmo regime escala fator e
+      ruído (σ̄ = market_vol). Com ``vol_of_vol = 0``, a variância é constante.
+
+    Erro se algum retorno ficar ≤ −1 (preço não positivo): o cenário seria inválido.
+    """
+    b = np.asarray(betas, dtype=np.float64)
+    s = np.asarray(idiosyncratic_vols, dtype=np.float64)
+    _require(b.ndim == 1 and b.shape == s.shape and b.size >= 1, "betas e vols: mesmo shape 1-D")
+    _require(bool(np.all(s >= 0.0)) and market_vol > 0.0, "volatilidades devem ser positivas")
+    _require(0.0 <= vol_persistence < 1.0 and vol_of_vol >= 0.0, "parâmetros de volatilidade")
+    _require(n_obs >= 2, "n_obs deve ser >= 2")
+    shocks = rng.standard_normal(n_obs) * vol_of_vol
+    h = np.empty(n_obs, dtype=np.float64)
+    h[0] = shocks[0] / math.sqrt(1.0 - vol_persistence**2) if vol_of_vol > 0 else 0.0
+    for t in range(1, n_obs):
+        h[t] = vol_persistence * h[t - 1] + shocks[t]
+    regime = np.exp(h)
+    market = rng.standard_normal(n_obs) * market_vol * regime
+    idio = rng.standard_normal((n_obs, b.size)) * s * regime[:, None]
+    returns = mean + market[:, None] * b + idio
+    if np.any(returns <= -1.0):
+        raise ContractViolationError("cenário gerou retorno <= -100%: parâmetros inválidos")
+    out: FloatArray = returns
+    return out
+
+
+def business_day_calendar(start: str, n_obs: int) -> NDArray[np.datetime64]:
+    """Pregões sintéticos: dias úteis (seg–sex) a partir de ``start``; sem feriados."""
+    _require(n_obs >= 1, "n_obs deve ser >= 1")
+    days = np.busday_offset(np.datetime64(start, "D"), np.arange(n_obs), roll="forward")
+    return np.asarray(days, dtype="datetime64[D]")

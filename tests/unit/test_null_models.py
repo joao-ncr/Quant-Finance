@@ -7,21 +7,25 @@ from collections.abc import Callable
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from frente_e.core.null_models import (
     ar1_correlation,
     block_correlation,
+    business_day_calendar,
     equicorrelation,
     expected_max_iid_normal,
     sample_correlation_estimate,
     sample_standardized_null,
     separable_grid_correlation,
+    simulate_factor_returns,
 )
 from frente_e.core.sharpe_inference import expected_max_factor
 from frente_e.errors import ContractViolationError
 from frente_e.experiments.seeds import generator_for
 
 SEED = 20261106
+Floats = NDArray[np.float64]
 
 
 # ------------------------------------------------------------------------- estruturas
@@ -134,3 +138,92 @@ def test_sample_correlation_estimate_is_close_to_truth() -> None:
     assert np.allclose(estimate, c, rtol=0, atol=6 * (1 - rho**2) / math.sqrt(t))
     with pytest.raises(ContractViolationError):
         sample_correlation_estimate(c, 5, generator_for(SEED, 6))
+
+
+# ------------------------------------------------------------- painel sem sinal
+def _factor(stream: int, *, n_obs: int = 20_000, phi: float = 0.0, vov: float = 0.0) -> Floats:
+    return simulate_factor_returns(
+        n_obs,
+        generator_for(SEED, 50, stream),
+        mean=0.0003,
+        market_vol=0.01,
+        betas=np.array([0.5, 1.0, 1.5]),
+        idiosyncratic_vols=np.array([0.01, 0.02, 0.0]),
+        vol_persistence=phi,
+        vol_of_vol=vov,
+    )
+
+
+def test_factor_returns_have_the_specified_mean_and_no_serial_correlation() -> None:
+    r = _factor(1)
+    se = r.std(axis=0, ddof=1) / math.sqrt(r.shape[0])
+    assert np.all(np.abs(r.mean(axis=0) - 0.0003) < 4 * se)
+    for col in r.T:
+        lag1 = np.corrcoef(col[1:], col[:-1])[0, 1]
+        assert abs(lag1) < 4 / math.sqrt(col.size)  # sem dependência na média
+
+
+def test_cross_sectional_correlation_follows_betas() -> None:
+    r = _factor(2)
+    # ativo 2: só fator de mercado (β = 1,5, sem ruído idiossincrático)
+    cov = np.cov(r, rowvar=False)
+    assert cov[2, 2] == pytest.approx((1.5 * 0.01) ** 2, rel=0.05)
+    assert cov[0, 2] == pytest.approx(0.5 * 1.5 * 0.01**2, rel=0.1)
+
+
+def test_volatility_clustering_only_when_enabled() -> None:
+    def squared_lag1(x: Floats) -> float:
+        sq = (x[:, 1] - x[:, 1].mean()) ** 2
+        return float(np.corrcoef(sq[1:], sq[:-1])[0, 1])
+
+    calm = _factor(3)
+    clustered = _factor(3, phi=0.98, vov=0.15)
+    bound = 4 / math.sqrt(calm.shape[0])
+    assert abs(squared_lag1(calm)) < bound
+    assert squared_lag1(clustered) > 4 * bound  # mesmo critério de 4 erros-padrão
+
+
+def test_factor_returns_are_reproducible_by_seed() -> None:
+    np.testing.assert_array_equal(_factor(4, phi=0.9, vov=0.1), _factor(4, phi=0.9, vov=0.1))
+
+
+def test_invalid_factor_parameters() -> None:
+    rng = generator_for(SEED, 51)
+    with pytest.raises(ContractViolationError):
+        simulate_factor_returns(
+            10,
+            rng,
+            mean=0.0,
+            market_vol=0.01,
+            betas=np.ones(2),
+            idiosyncratic_vols=np.ones(3),
+            vol_persistence=0.0,
+            vol_of_vol=0.0,
+        )
+    with pytest.raises(ContractViolationError):
+        simulate_factor_returns(
+            10,
+            rng,
+            mean=0.0,
+            market_vol=0.01,
+            betas=np.ones(2),
+            idiosyncratic_vols=np.ones(2),
+            vol_persistence=1.0,
+            vol_of_vol=0.0,
+        )
+    with pytest.raises(ContractViolationError, match="-100%"):
+        simulate_factor_returns(
+            50,
+            rng,
+            mean=0.0,
+            market_vol=0.01,
+            betas=np.ones(2),
+            idiosyncratic_vols=np.full(2, 5.0),
+            vol_persistence=0.0,
+            vol_of_vol=0.0,
+        )
+
+
+def test_business_day_calendar() -> None:
+    days = business_day_calendar("2024-01-05", 3)  # sexta
+    assert [str(d) for d in days] == ["2024-01-05", "2024-01-08", "2024-01-09"]

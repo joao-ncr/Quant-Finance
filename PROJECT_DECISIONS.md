@@ -34,6 +34,11 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
   - custos zero no primário, com giro reportado;
   - preço defasado só para avaliar posições, nunca para sinal ou execução;
   - deslistagem pelo valor terminal documentado, com limites de sensibilidade.
+- **Implementação (2026-11-06, ciclo seguinte):** `core.momentum`, validado contra uma implementação de referência dia a dia (METHODOLOGY_CONVENTIONS.md §7.1). Lacunas encontradas na regra:
+  - **DE-01.g DECIDED:** direção do desempate na fronteira do tercil — vence o menor identificador canônico, e os empates são contados;
+  - **DE-01.h PENDING:** capital de uma venda adiada com coortes sobrepostas; o motor gera `PendingDecisionError`; decidir antes do estudo real;
+  - **DE-01.i PENDING:** definição do giro;
+  - coorte sem elegíveis é erro explícito.
 - **Grade:** j, k ∈ {1, …, 12} meses (F144), com subfamílias aninhadas F4 = {6, 12}² e F16 = {3, 6, 9, 12}² (grade de Jegadeesh e Titman 1993) para a variação com N. Fixada antes dos dados e não ampliável.
 - **Alternativas descartadas:**
   - série temporal (MOP 2012): desenhada para futuros e dependente de ponderação por volatilidade, que Kim, Tse e Wald (2016) apontam como fonte do resultado;

@@ -574,3 +574,52 @@ Consequências e limitações:
 | **Desenho não nulo** (DE-07, DE-04.b) | o sinal plantável é a persistência cross-sectional de retornos | desenhar o processo gerador e o critério de "taxa nominal" (§4.5, leitura 5) |
 | **Pré-registro** | regra, grade, famílias, universos e timing definidos | fechar DD-01, DD-02, DD-03, DD-05 e o valor de S |
 | **Custo computacional** | 2 universos × 3 famílias de CSCV; F144 com S = 16 leva ≈ 131 s (§5.5) | cabe no orçamento |
+
+---
+
+## 7. Carteira de momentum sintética e estudos sobre a grade (ciclo de 2026-11-06)
+
+### 7.1 Etapa A — regra implementada (`core.momentum`) e lacunas de DE-01
+**Implementado exatamente como §6.2–6.5**, com os seguintes pontos de leitura explicitados:
+- **Linhas:** a linha t de retornos é o intervalo (t − 1, t]. Uma coorte formada no fechamento de f e executada no fechamento de f + 1 rende a partir da linha f + 2. Ela sai no fechamento de x = (k-ésimo fim de mês seguinte) + 1, e a linha x ainda conta.
+- **Fins de mês:** o último pregão da série nunca é data de formação, porque não haveria pregão seguinte para executar. Uma coorte cujo k-ésimo fim de mês cai fora da série fica ativa até o fim dos dados.
+- **Calendário comum:** a primeira formação usada é o primeiro fim de mês com ≥ 21·12 pregões de histórico; a matriz começa na linha seguinte à execução da 12ª formação. Por construção, F4 e F16 são **colunas idênticas** às de F144 (testado).
+- **Pesos:** o motor verifica em todas as linhas do calendário comum que Σ pesos + caixa = 1 (k coortes de 1/k encadeadas: a execução de uma coorte coincide com a saída de outra).
+- **Validação:** uma implementação de referência independente, um laço dia a dia em `tests/unit/test_momentum.py`, reproduz o motor com atol 1e-15, inclusive com 5% de dias sem negócio e compras adiadas.
+
+**Lacunas encontradas:**
+
+| ID | Lacuna | Decisão |
+|---|---|---|
+| DE-01.g | §6.4 diz "empate resolvido pelo identificador", sem a direção | **DECIDED (2026-11-06):** vence o menor índice na ordem canônica dos identificadores; as formações com empate na fronteira são contadas. Alternativas: sorteio com semente (acrescenta aleatoriedade sem ganho) ou incluir todos os empatados (tamanho de coorte variável, contraria ⌈n/3⌉). Com preços contínuos, empates exatos são raros |
+| DE-01.h | §6.5 manda manter o ativo cuja venda não pôde ser executada, mas com coortes sobrepostas a fatia que expira já foi ocupada pela coorte nova (peso total > 1). Execução de uma coorte = saída de outra | **PENDING.** O motor gera `PendingDecisionError("DE-01.h")`. Alternativas: (a) excesso temporário financiado a CDI; (b) a coorte nova entra só com o capital liberado; (c) renormalizar a carteira. Não ocorre nos cenários sintéticos completos. Deve ser decidido antes do estudo real, com a contagem de casos da auditoria |
+| — | coorte sem nenhum elegível | **erro explícito**, sem convenção. U1/U2 garantem ≥ 30 elegíveis |
+| DE-01.i | §6.5 manda reportar o **giro**, mas não o define (pesos constantes implicam rebalanceamento diário) | **PENDING**, porque só é necessário no relatório real. Não implementado |
+
+### 7.2 Cenários sintéticos sem sinal (fixados em 2026-11-06, antes dos estudos da Etapa B)
+`experiments.momentum_scenarios`:
+- 60 ativos, T = 6550 pregões, r_f = 0,04%/dia.
+- Média de **todos** os ativos = r_f, então o SR verdadeiro de qualquer configuração é zero (nula global exata).
+- Os parâmetros cross-sectionais vêm de fluxo fixo e são iguais em todas as réplicas.
+
+| Cenário | σ mercado | β | σ idiossincrático | volatilidade estocástica (φ, σ_h) |
+|---|---|---|---|---|
+| base | 1,2% | U(0,7; 1,3) | U(1,2%; 2,5%) | — |
+| low_common | 0,5% | U(0,7; 1,3) | U(1,2%; 2,5%) | — |
+| vol_clustering | 1,2% | U(0,7; 1,3) | U(1,2%; 2,5%) | (0,98; 0,15) |
+| heterogeneous | 1,2% | U(0,3; 1,7) | U(0,5%; 4%) | — |
+
+O gerador separa a dependência (fator comum, heterogeneidade, aglomeração de volatilidade) da previsibilidade, que é nula: retornos independentes no tempo na média. Testes em `tests/unit/test_null_models.py`.
+
+**Execução de mecânica** (`run-de18681ba37247d788bc0db5233746e1`, `sim-momentum-mechanics`, `RunKind.SYNTHETIC`; artefato `10e56474…`): F144 em cada cenário, uma réplica.
+- Em todos os cenários: 6049 linhas (2001-12-04 a 2025-02-07) e 290 formações; zero empates na fronteira, compras adiadas e dias de preço defasado (painel completo).
+- Correlação entre configurações (fora da diagonal, mín / mediana / máx):
+
+| Cenário | Mín | Mediana | Máx |
+|---|---|---|---|
+| base | 0,935 | 0,985 | 0,9998 |
+| low_common | 0,753 | 0,938 | 0,9991 |
+| vol_clustering | 0,950 | 0,988 | 0,9998 |
+| heterogeneous | 0,877 | 0,969 | 0,9995 |
+
+- **[Fato]** A carteira só comprada herda o fator de mercado, e as 144 configurações são fortemente correlacionadas, como antecipado em §6.1. **[Inferência]** Isso coloca a grade na região de §4.5 em que o fator comum domina a correlação.

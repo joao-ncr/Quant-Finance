@@ -141,8 +141,14 @@ class Manifest:
         return dict(zip(entry["config_ids"], entry["true_sharpe"], strict=True))
 
     def estimated_hours(self) -> float:
-        total = sum(float(c["estimated_seconds"]) for c in self.cells)
-        return total / float(self.budget["parallel_speedup"]) / 3600.0
+        """Horas de relógio: células de momentum em ``n_workers`` processos (custo
+        sequencial / ganho medido); células gaussianas num único processo."""
+        speedup = float(self.budget["parallel_speedup"])
+        seconds = sum(
+            float(c["estimated_seconds"]) / (speedup if c["level"] == "momentum" else 1.0)
+            for c in self.cells
+        )
+        return seconds / 3600.0
 
 
 def load_manifest(path: Path, *, project_root: Path) -> Manifest:

@@ -242,3 +242,73 @@ def psr_level_tests(psr_cells: Mapping[str, Mapping[str, Any]], fwer: float) -> 
 def pbo_auc(signal_values: ArrayLike, null_values: ArrayLike) -> float:
     """P(φ_H₁ < φ_H₀) + ½·P(empate): separação nula × sinal, sem limiar (D6)."""
     return mann_whitney_auc(signal_values, null_values)
+
+
+# ------------------------------------------------- estudo completo (pré-especificado)
+def evaluate_study(
+    cells: Sequence[Mapping[str, Any]],
+    ev_config: Mapping[str, Any],
+    results: Mapping[str, Mapping[str, Any]],
+    pairs: Sequence[str],
+) -> JsonDict:
+    """Avaliação completa, fixada antes da Etapa C.
+
+    - resumos por célula e família;
+    - **D3** sobre todas as células (nulas: gaussianas e momentum; poder: ``power_cells``);
+    - **2b**: PSR(0) da configuração pré-escolhida, uma vez por célula de momentum H₀ (a
+      série é a mesma em todas as famílias que a contêm; usa a primeira família listada);
+    - **D6**: para cada célula com sinal e família com PBO, a AUC contra a célula H₀ de
+      momentum com o **mesmo cenário e família**, e a comparação PBO × PBO verdadeira.
+    """
+    summaries: dict[str, JsonDict] = {}
+    hypotheses: dict[str, str] = {}
+    for cell in cells:
+        cid = str(cell["id"])
+        hypotheses[cid] = str(cell["hypothesis"])
+        if cid not in results:
+            raise ContractViolationError(f"resultado ausente da célula {cid!r}")
+        if cell["level"] == "gaussian":
+            summaries[cid] = {"gaussian": gaussian_summary(results[cid]["summary"], ev_config)}
+        else:
+            summaries[cid] = {
+                f: momentum_family_summary(results[cid]["replicates"], f, pairs, ev_config)
+                for f in cell["families"]
+            }
+    selection = select_pair(summaries, hypotheses, pairs, ev_config)
+    psr_cells: JsonDict = {}
+    null_pbo: dict[tuple[str, str], list[float]] = {}
+    for cell in cells:
+        if cell["level"] != "momentum" or cell["hypothesis"] != "H0":
+            continue
+        for family in cell["families"]:
+            s = summaries[str(cell["id"])][family]
+            if "psr" in s and str(cell["id"]) not in psr_cells:
+                psr_cells[str(cell["id"])] = s["psr"]
+            if "pbo_values" in s:
+                null_pbo[(str(cell["scenario"]), family)] = s["pbo_values"]
+    pbo_signal: JsonDict = {}
+    for cell in cells:
+        if cell["level"] != "momentum" or cell["hypothesis"] == "H0":
+            continue
+        for family in cell["families"]:
+            s = summaries[str(cell["id"])][family]
+            if "pbo_values" not in s:
+                continue
+            reference = null_pbo.get((str(cell["scenario"]), family))
+            pbo_signal[f"{cell['id']}/{family}"] = {
+                "auc_vs_null": None if reference is None else pbo_auc(s["pbo_values"], reference),
+                "pbo_vs_truth": s.get("pbo_vs_truth"),
+                "overfit_true": s.get("overfit_true"),
+            }
+    for families in summaries.values():
+        for s in families.values():
+            s.pop("pbo_values", None)
+            for entry in (s.get("pairs") or {}).values():
+                if isinstance(entry, dict):
+                    entry.pop("indicators", None)
+    return {
+        "summaries": summaries,
+        "pair_selection": selection,
+        "psr_level": psr_level_tests(psr_cells, float(ev_config["fwer"])) if psr_cells else None,
+        "pbo_signal": pbo_signal,
+    }

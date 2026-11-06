@@ -427,6 +427,8 @@ def test_manifest_verification_failures(tmp_path: Path) -> None:
     path = _write_project(tmp_path)
     manifest = man.load_manifest(path, project_root=tmp_path)
     assert manifest.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+    # momentum em paralelo (ganho 1,5), gaussiano em um processo: (2/1,5 + 2) s
+    assert manifest.estimated_hours() == pytest.approx((2.0 / 1.5 + 2.0) / 3600.0)
     (tmp_path / "docs" / "proto.md").write_text("alterado\n", encoding="utf-8")
     with pytest.raises(ContractViolationError, match="SHA-256"):
         man.load_manifest(path, project_root=tmp_path)
@@ -498,23 +500,17 @@ def test_development_cells_run_record_and_evaluate(tmp_path: Path) -> None:
         for r in records
         if r["status"] == "started"
     )
-    # avaliação completa sobre os resumos (só estrutura; R pequeno)
-    evalcfg = manifest.evaluation
-    summaries: dict[str, Any] = {
-        "G0": {"gaussian": ev.gaussian_summary(results["G0"]["summary"], evalcfg)},
-        "G1": {"gaussian": ev.gaussian_summary(results["G1"]["summary"], evalcfg)},
-    }
-    for cell in ("P0", "P1"):
-        summaries[cell] = {
-            f: ev.momentum_family_summary(results[cell]["replicates"], f, conf.PAIRS, evalcfg)
-            for f in ("F4", "F16")
-        }
-    hyp = {"G0": "H0", "G1": "H1-gauss", "P0": "H0", "P1": "H1-mom"}
-    decision = ev.select_pair(summaries, hyp, conf.PAIRS, evalcfg)
-    assert set(decision["pairs"]) == set(conf.PAIRS)
-    assert "pbo_vs_truth" in summaries["P1"]["F16"]
-    assert "pbo_vs_truth" not in summaries["P0"]["F16"]
-    assert "psr" in summaries["P0"]["F4"]
+    # avaliação completa pré-especificada (só estrutura; R pequeno)
+    report = ev.evaluate_study(manifest.cells, manifest.evaluation, results, conf.PAIRS)
+    assert set(report["pair_selection"]["pairs"]) == set(conf.PAIRS)
+    assert set(report["psr_level"]) == {"P0"}
+    assert set(report["pbo_signal"]) == {"P1/F4", "P1/F16"}
+    assert report["pbo_signal"]["P1/F16"]["auc_vs_null"] is not None
+    assert report["pbo_signal"]["P1/F16"]["pbo_vs_truth"] is not None
+    assert "pbo_vs_truth" not in report["summaries"]["P0"]["F16"]
+    json.dumps(report)  # serializável
+    with pytest.raises(ContractViolationError, match="resultado ausente"):
+        ev.evaluate_study(manifest.cells, manifest.evaluation, {}, conf.PAIRS)
 
 
 def test_momentum_replicate_metrics_match_direct_computation() -> None:

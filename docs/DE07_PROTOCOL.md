@@ -338,6 +338,22 @@ a_i,t = φ·a_i,t−1 + √(1 − φ²)·s_a·ξ_i,t,   φ = 2^(−1/h)
 - os SR verdadeiros têm erro de Monte Carlo (EP ≈ 0,1 em unidades de δ), registrado por configuração;
 - a definição de intensidade usa F144; as famílias F4 e F16 da mesma célula têm δ ≤ δ*.
 
+### 7.2.2 Execução da calibração e falha registrada (2026-11-06)
+**Execução:** `run-434c74846c8042d0a40610301e7ea065` (`de07-signal-calibration`, `phase = calibration`, commit `582910b` com árvore limpa, 2 processos). **Status no ledger: `failed`**, com a mensagem "calibração não convergiu: h=252.0, alvo 1.0, δ̂*=1.452". Sem artefato.
+
+O que foi observado. São valores do gerador, não da avaliação dos métodos:
+
+| h | Grade δ̂*(s), 30 réplicas: s = 0,00025 / 0,0005 / 0,001 / 0,002 / 0,004 | Verificação, 100 réplicas, fluxo independente |
+|---|---|---|
+| 63 | 0,18 / 0,50 / 1,74 / 5,51 / 15,23 | alvo 1 → 0,857 (s = 0,000733); alvo 2,5 → 2,586 (s = 0,001243); alvo 4 → 4,046 (s = 0,001649): **dentro da tolerância** |
+| 252 | 0,66 / 1,28 / 3,46 / 8,94 / 21,02 | alvo 1: fora da tolerância na verificação e no refinamento (último δ̂* = 1,45) → **erro; procedimento interrompido** |
+
+As células h = 252 com δ* ∈ {2,5; 4} e a H₁-com não foram calibradas.
+
+**Diagnóstico [inferência, não verificada por nova execução]:** a tolerância de 0,25 supôs um erro-padrão de δ̂* ≈ 0,1 com 100 réplicas, isto é, só o ruído i.i.d. dos retornos (≈ 1/√R). Com meia-vida longa (h = 252), as médias específicas de cada réplica persistem por cerca de um ano. Assim, o lucro de momentum realizado varia muito entre réplicas, e o erro-padrão de δ̂* fica maior; o da grade (30 réplicas) maior ainda, o que também desloca a escala interpolada. A discrepância de ≈ 0,45 entre grade e verificação é compatível com isso. Não há evidência de defeito de código: os testes do procedimento passam, e h = 63 convergiu.
+
+**Consequência:** sem tabela de verdades válida, o manifesto **não foi gerado nem congelado**. Corrigir o procedimento depois de ver a falha é uma decisão metodológica e aguarda o desenvolvedor (relatório da Etapa B). A execução falha permanece no ledger e não é descartada.
+
 ### 7.3 Representatividade e redundância dos cenários nulos (§4.2 do pedido)
 | Regime | Estruturas | Cobertura | Observação |
 |---|---|---|---|
@@ -364,6 +380,42 @@ a_i,t = φ·a_i,t−1 + √(1 − φ²)·s_a·ξ_i,t,   φ = 2^(−1/h)
 `low_common` com sinal (+6 células) fica como opção de D5.
 
 ---
+
+### 7.5 Matriz de células (Etapa B3, 2026-11-06; substitui §7.4) — **proposta; congelamento bloqueado pela falha da calibração (§7.2.2)**
+Gerada por código (`experiments.de07_build_manifest`) e congelada em `configs/studies/de07_confirmatory_v1.toml`. Os SR verdadeiros das células com sinal ficam em `configs/studies/de07_signal_truth_v1.json`. R segue D5 sem exceção: 20 000 por célula gaussiana, 1000 por célula de momentum sem sinal, 500 por célula de momentum com sinal.
+
+| Célula(s) | Hipótese | Parâmetros | R | Métricas | Objetivos cobertos | Custo estimado (relógio) |
+|---|---|---|---|---|---|---|
+| `G0-*` (18) | H₀ | 9 estruturas genéricas (§4.4 de METHODOLOGY) + equi ρ ∈ {0,95; 0,98; 0,99} × M ∈ {4, 16, 144}; T = 6049; N̂ sobre a C verdadeira | 20 000 | rejeição do DSR nos 18 pares, z_E, N̂ | 1, 2 | 18 × 10,5 s |
+| `G1-*` (33) | H₁-gauss | as mesmas estruturas; sinal δ = 2,5 em `single` (1 configuração) e `decile` (⌈0,1·M⌉; omitido com M = 4) | 20 000 | poder complementar, **não decisório** | 4 (complementar) | 33 × 10,5 s |
+| `P0-base` | H₀ | cenário `base`; F4, F16, F144; CSCV S = 16 nas três | 1000 | DSR (18 pares), PSR (6, 6), PBO, N̂, V, ρ̂̄ | 1, 2, 3, 6 (nula e referência das AUC) | 3687 s |
+| `P0-vol_clustering` | H₀ | cenário `vol_clustering`; F4, F16; CSCV nas duas | 1000 | idem | 1, 2, 3 (caudas e aglomeração), 6 | 533 s |
+| `P1-mom-h{63,252}-d{1; 2,5; 4}` (6) | H₁-mom | `base` + μ_i,t calibrado (§7.2.1); F4, F16; CSCV nas duas | 500 | idem + descoberta verdadeira, PBO verdadeira, sobreajuste verdadeiro | 4, 6, 7; as duas com δ* = 2,5 são as `power_cells` de D3 | 6 × 270 s |
+| `P1-com-d2.5` | H₁-com | `base` + π (δ_EW = 2,5), sem μ; F4, F16; CSCV | 500 | idem | 5, 6 | 270 s |
+
+Total estimado: **≈ 1,85 h** (momentum: custo sequencial medido / ganho 1,5 com 2 processos; gaussiano sequencial; 10 s de sobrecarga por célula). Fica abaixo do limite de 2 h, com folga de ≈ 8%.
+
+**Cobertura dos objetivos (Etapa B3):**
+1. Calibração sob diferentes dependências: 18 estruturas gaussianas e 2 estruturas da grade.
+2. Falsos positivos do DSR: todas as células H₀, com Holm por par (D3).
+3. Nível do PSR pré-selecionado: (6, 6) em `P0-base` e `P0-vol_clustering`.
+4. Poder: 3 intensidades × 2 persistências (F4/F16), mais o nível gaussiano complementar.
+5. Prêmio sem momentum: `P1-com-d2.5`.
+6. PBO sob a nula e sob sinal: distribuições por família; AUC contra `P0-base` com o mesmo cenário e família.
+7. PBO × sobreajuste verdadeiro: PBO verdadeira e sobreajuste verdadeiro nas células com sinal.
+
+**Células excluídas e motivo:**
+| Exclusão | Motivo |
+|---|---|
+| Qualquer célula com sinal em F144 | ≈ 1840 s cada, total ≈ 2,3 h. **Limitação:** poder e PBO sob sinal ficam medidos para N ∈ {4, 16}; para F144 há só evidência de validade (nível sob H₀) |
+| `P0-low_common`, `P0-heterogeneous` | correlação de 0,93–0,97 coberta pelas gaussianas equi 0,95 e pela `P0-base`; mesma mecânica; +≈ 530 s cada, sem folga |
+| `P0-vol_clustering` com F144 | +≈ 3150 s; o objetivo da célula (PSR e nível sob aglomeração) é atendido com F4/F16 |
+| Seis células `low_common` com sinal | excluídas por D5 |
+| Padrão gaussiano `decile` com M = 4 | idêntico a `single` (⌈0,4⌉ = 1) |
+
+**Ordem de execução:** células gaussianas (rápidas, um processo) → `P0-base` → `P0-vol_clustering` → `P1-mom-*` → `P1-com-d2.5`. Cada célula é uma execução no ledger. Uma célula interrompida é reexecutada inteira, com a mesma semente, e a falha permanece registrada.
+
+**Sementes:** uma raiz por nível (`gaussian`, `momentum`), distintas entre si e da raiz da calibração. Fluxo da réplica = (raiz, ordem da célula, réplica, 0/1).
 
 ## 8. Réplicas, custo e separação das fases
 

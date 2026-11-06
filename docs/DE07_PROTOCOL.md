@@ -309,6 +309,35 @@ a_i,t = φ·a_i,t−1 + √(1 − φ²)·s_a·ξ_i,t,   φ = 2^(−1/h)
 - **Calibração de s_a (fase de desenvolvimento, §8):** para cada (h, δ*), uma busca por bissecção sobre o SR verdadeiro estimado por oráculo. Ela usa só a média dos ŜR em réplicas com fluxo próprio, nunca DSR, PBO ou seleção. A regra é fixada agora; o valor resultante vai para o manifesto antes da execução confirmatória.
 - **H₁-com:** π tal que o SR verdadeiro da carteira igualmente ponderada dê δ = 2,5.
 
+### 7.2.1 Implementação e calibração (Etapa B2, 2026-11-06)
+**Módulos:**
+- `core.signal_models`: μ_i,t (AR(1) estacionário desde t = 0, φ = 2^(−1/h), média transversal exatamente zero) e o deslocamento π + μ_i,t. Puro: recebe o `Generator`.
+- `experiments.de07_design`: o painel de uma réplica soma o deslocamento aos retornos simples do cenário (`momentum_scenarios.scenario_panel(..., mean_shift)`). Depois, a grade é construída por `build_momentum_returns` (regra DE-01 inteira: sinal pelos preços, tercil, pesos iguais, coortes sobrepostas). Não há atalho.
+- **Fluxos:** `(raiz, *caminho, 0)` gera o ruído do cenário, idêntico aos controles nulos; `(raiz, *caminho, 1)` gera só μ. Sem sinal, o painel é **bit a bit** o cenário nulo original (teste com digest do código anterior).
+- `experiments.de07_calibration`: a calibração. `experiments.de07_confirmatory`: o executor de uma célula. `experiments.de07_evaluation` e `core.mc_inference`: as regras de §4–§6, implementadas e testadas antes da Etapa C. `experiments.de07_manifest`: leitura estrita e escrita determinística do manifesto.
+
+**Sharpe verdadeiro (definição exata).** SR_c = E[e_c,t]/√Var(e_c,t): momentos **incondicionais** do excesso diário da carteira DE-01 da configuração c sob o processo gerador estacionário, na escala diária do PSR. Não há forma fechada. O valor é estimado por oráculo: média e variância **agregadas** sobre todas as linhas de R réplicas independentes (combinação exata de grupos), com erro-padrão pelo desvio dos ŜR por réplica dividido por √R. Sob H₀, SR_c = 0 exatamente.
+
+**Intensidade.** δ* = máx_{c∈F144} SR_c·√(T − 1), com T = 6049 linhas do calendário comum.
+
+**Procedimento de calibração (fixado no código antes de rodar):**
+1. Para h ∈ {63, 252}: δ̂*(s) numa grade s ∈ {0,00025; 0,0005; 0,001; 0,002; 0,004} (desvio estacionário diário de a_i,t), com 30 réplicas e **números aleatórios comuns** entre escalas. A grade é estendida por fatores de 2 se não cobrir os alvos (até 4 vezes de cada lado).
+2. δ̂*(s) deve ser estritamente crescente; caso contrário, erro.
+3. s(alvo) vem da interpolação linear em (log s, log δ̂*).
+4. Verificação com fluxo independente e 100 réplicas, que produz a tabela de SR verdadeiros congelada no manifesto. Aceita se |δ̂* − alvo| ≤ 0,25 (≈ 2,5 erros-padrão). Senão, há um único refinamento pela inclinação local, com outro fluxo, e nova verificação; se falhar, erro, e a execução falha no ledger.
+5. H₁-com: π = 2,5·σ_EW/√(T − 1), com σ_EW exato (β̄²σ_m² + Σs_i²/n²); SR verdadeiros pelo oráculo.
+
+**Separação calibração × avaliação (testada):**
+- a calibração e o gerador não importam DSR, PSR, PBO, CSCV, estimadores de N, a avaliação nem o executor (verificação estática das importações);
+- a calibração usa uma semente raiz própria, e o manifesto exige sementes raiz distintas entre calibração e avaliação;
+- o executor confirmatório só lê a tabela de verdades congelada (SHA-256 no manifesto).
+
+**Limitações da calibração:**
+- δ̂* é o máximo de 144 estimativas ruidosas: viés para cima. Como as configurações têm correlação ≈ 0,98, o componente não comum do erro é pequeno (≈ √0,02 × 0,1 ≈ 0,014 em δ) [inferência];
+- a tolerância de 0,25 em δ equivale a cerca de ±7 pp no poder de um teste único com δ = 2,5;
+- os SR verdadeiros têm erro de Monte Carlo (EP ≈ 0,1 em unidades de δ), registrado por configuração;
+- a definição de intensidade usa F144; as famílias F4 e F16 da mesma célula têm δ ≤ δ*.
+
 ### 7.3 Representatividade e redundância dos cenários nulos (§4.2 do pedido)
 | Regime | Estruturas | Cobertura | Observação |
 |---|---|---|---|
@@ -350,6 +379,18 @@ a_i,t = φ·a_i,t−1 + √(1 − φ²)·s_a·ξ_i,t,   φ = 2^(−1/h)
 - Calibração de s_a: ≈ 1 h.
 - Nível Z: minutos.
 - **Excede o orçamento provisório de "≤ 2 h por estudo completo" (DA-07).** Isso exige aprovação (D5). As alternativas são reduzir **células**, nunca réplicas.
+
+### 8.2.1 Medições da Etapa B2 (2026-11-06, só engenharia: tempo e memória, nenhuma estatística lida)
+| Medida | Valor |
+|---|---|
+| Réplica de momentum F4 + F16 + F144 com CSCV S = 16 nas três, sequencial | 5,52 s |
+| Réplica F4 + F16 com CSCV nas duas, sequencial | 0,79 s |
+| Réplica F144 completa, 2 processos, regime estável (40 réplicas) | **3,50 s efetivos (ganho 1,58)** |
+| Ganho com 2 processos em lotes pequenos (8–16 réplicas) | 1,04–1,32 (custo de iniciar processos) |
+| Pico de memória por processo (réplica F144 completa) | 247 MiB (`PER_WORKER_BYTES` = 300 MiB) |
+
+- **Pré-condição de memória:** 2 processos exigem cerca de 0,6 GiB dentro do orçamento de 60% da RAM disponível, ou seja, ≥ 1 GiB disponível. Em medições anteriores havia só 0,75 GiB (orçamento de 0,45 GiB, um processo).
+- O executor confirmatório **falha explicitamente** se não puder usar os processos previstos no orçamento do manifesto, em vez de exceder o tempo em silêncio.
 
 ### 8.3 Fases e registro (sem segundo mecanismo)
 | Fase | O que é | Registro | Pode ser reportado como evidência? |

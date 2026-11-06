@@ -98,16 +98,34 @@ COMMON: dict[str, JsonValue] = {
 }
 
 
-def scenario_panel(
-    spec: Mapping[str, Any], common: Mapping[str, Any], rng: np.random.Generator
-) -> tuple[AssetPanel, FloatArray]:
-    """Painel completo (sem ausências, todos elegíveis) e r_f constante do cenário."""
+def scenario_parameters(spec: Mapping[str, Any]) -> tuple[FloatArray, FloatArray]:
+    """(betas, volatilidades idiossincráticas) do cenário, do fluxo fixo ``param_stream``.
+
+    Idênticos em todas as réplicas; a ordem dos sorteios (betas, depois vols) é a original.
+    """
     params = generator_for(PARAM_SEED, int(spec["param_stream"]))
-    n_assets, n_obs = int(spec["n_assets"]), int(common["n_obs"])
+    n_assets = int(spec["n_assets"])
     beta_low, beta_high = (float(v) for v in spec["beta_range"])
     vol_low, vol_high = (float(v) for v in spec["idio_vol_range"])
     betas = params.uniform(beta_low, beta_high, size=n_assets)
     vols = params.uniform(vol_low, vol_high, size=n_assets)
+    return betas, vols
+
+
+def scenario_panel(
+    spec: Mapping[str, Any],
+    common: Mapping[str, Any],
+    rng: np.random.Generator,
+    mean_shift: FloatArray | None = None,
+) -> tuple[AssetPanel, FloatArray]:
+    """Painel completo (sem ausências, todos elegíveis) e r_f constante do cenário.
+
+    ``mean_shift`` (T × n, opcional; DE-07 §7.1) é somado aos retornos simples antes do
+    índice de retorno total: é o único ponto de entrada do sinal, que depois passa pela
+    regra DE-01 inteira. Sem ele (``None``), o painel é o cenário nulo original, bit a bit.
+    """
+    n_obs = int(common["n_obs"])
+    betas, vols = scenario_parameters(spec)
     rf = float(common["risk_free_daily"])
     returns = simulate_factor_returns(
         n_obs,
@@ -119,13 +137,22 @@ def scenario_panel(
         vol_persistence=float(spec["vol_persistence"]),
         vol_of_vol=float(spec["vol_of_vol"]),
     )
+    if mean_shift is not None:
+        shift = np.asarray(mean_shift)
+        if shift.dtype != np.float64 or shift.shape != returns.shape:
+            raise ContractViolationError(
+                f"mean_shift deve ser float64 {returns.shape}; recebido {shift.dtype} {shift.shape}"
+            )
+        returns = returns + shift
+        if np.any(returns <= -1.0):
+            raise ContractViolationError("sinal gerou retorno <= -100%: parâmetros inválidos")
     tri = np.ones_like(returns)
     tri[1:] = np.cumprod(1.0 + returns[1:], axis=0)
     panel = AssetPanel(
         business_day_calendar(str(common["start"]), n_obs),
         tri,
         np.ones(tri.shape, dtype=np.bool_),
-        tuple(f"s{i:02d}" for i in range(n_assets)),
+        tuple(f"s{i:02d}" for i in range(betas.size)),
     )
     return panel, np.full(n_obs, rf)
 

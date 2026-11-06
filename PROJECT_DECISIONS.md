@@ -222,6 +222,7 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
   - **D6 — DECIDED:** PBO contra a distribuição nula da família, AUC e sobreajuste verdadeiro; sem limiar universal.
   - **D7 — DECIDED:** confirmatórias como `SYNTHETIC` + fase confirmatória + hash do protocolo + commit limpo.
 - **Evidência que não vale como confirmatória:** a taxa "0–8%" de DSR > 0,95 na grade não foi reproduzida pelo código versionado (ver DE-04.b).
+- **Etapa B2 (2026-11-06): gerador não nulo, calibração e executor implementados e testados** (docs/DE07_PROTOCOL.md §7.2.1 e §8.2.1). O sinal entra só como deslocamento da média dos retornos e passa pela regra DE-01 inteira. Os controles nulos ficam bit a bit idênticos. A calibração usa só o Sharpe verdadeiro (oráculo). A fase confirmatória do executor exige manifesto verificado, árvore limpa, código congelado, processos do orçamento e a flag explícita da Etapa C. Nenhuma execução confirmatória foi feita.
 - **Só após a Etapa C:** adoção de um par (N, V), do estimador de N efetivo e de V_ρ; item 5 de METHODOLOGY §1.9.
 - **Etapa A (2026-11-06), achados:**
   - **Escala do PSR:** a análise dimensional não encontrou mistura de unidades em nenhum caminho do cálculo (§2.1). A "escala do PSR" da emenda 4 é a proposta de medir o erro de SR₀ em unidades de σ_SR, não um erro de código.

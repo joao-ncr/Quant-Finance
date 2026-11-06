@@ -115,6 +115,11 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Resultado preliminar (2026-11-06, `run-de53b36114814d0398437a14fd8d100f`, 9 estruturas genéricas):**
   - Pelo critério original (V marginal correto), **nenhum candidato é adequado**: o pior |erro| de SR₀ vai de 104% (Li-Ji) a 219% (M bruto).
   - O estimador principal continua **aberto**. A escolha final depende das estruturas induzidas pela grade de momentum (após DE-01).
+- **Avaliação na grade de momentum (2026-11-06, `run-36aa72b3…`, METHODOLOGY_CONVENTIONS.md §7.3 e §7.6):**
+  - Com correlação de 0,93 a 0,99 entre configurações, E[máx ŜR] sob a nula é indistinguível de zero em 8 de 12 estruturas. O critério de erro **relativo** fica mal posto (erros de −647% a +5384%).
+  - A saída mecânica da regra (`gao + V_H0`, pior erro de 2710%) **não é adotada**. **Nenhum estimador foi validado; o estimador principal continua PENDING.**
+  - Os estimadores por autovalores dão N̂ < 2 em F4/F16 de vários cenários.
+  - Próximo passo proposto (emenda 4, pendente): erro padronizado na escala do PSR, calibração P(DSR > 0,95) e ≥ 500 réplicas, pré-registrados junto com o desenho não nulo (DE-07).
 - **Limitação:** Nyholt, Li-Ji, Gao e Galwey foram implementados a partir do código do `poolr`; os artigos originais não foram conferidos. Galwey amplifica ruído de autovalores nulos (√ε). A fórmula A.3 extrapola para N̂ > M (até M + 1) quando a correlação média é negativa; o valor não é cortado (contraexemplo achado por teste de propriedade em 2026-11-06).
 - **Contexto e problema:** Configurações vizinhas são correlacionadas. N bruto superdeflaciona; ignorar tentativas subdeflaciona.
 - **Alternativas consideradas:** (a) N bruto como cota superior; (b) clusterização das séries de retornos, com N efetivo = nº de clusters (ONC: López de Prado e Lewis, *Quantitative Finance* 19(9), 2019); (c) medidas baseadas em autovalores da matriz de correlação (Nyholt 2004; Li e Ji 2005, *Heredity* 95(3); Galwey 2009, com implementação de referência em `poolr::meff`); (d) reportar sensibilidade do DSR a uma faixa de N.
@@ -149,6 +154,9 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
   - Motivo: nas 9 estruturas, o par (M, V entre tentativas) errou SR₀ entre +1% e +43%, sempre conservador e quase exato na equicorrelação. Os pares (N efetivo, V entre tentativas) chegaram a −36% (anticonservadores, porque descontam a correlação duas vezes).
   - A proposta anterior (V entre tentativas com N efetivo) fica registrada como **descartada por evidência**.
   - Revisar com as estruturas da grade (DE-01) e com um desenho não nulo (DE-07), porque sob a nula global V_H0 é exato por construção.
+  - **Grade de momentum (2026-11-06, `run-36aa72b3…`):** V entre tentativas = 2–8% de V marginal.
+    - Descritivo post hoc: (M, V entre tentativas) teve |erro| ≤ 0,20 σ_SR e taxa de DSR > 0,95 sob a nula de 0 a 8% (média 4%), nas 12 estruturas. Os pares com N efetivo chegaram a 10%; V_H0 foi conservador demais.
+    - O primário provisório se mantém, **ainda PROVISÓRIO**, porque falta o desenho não nulo (DE-07) e a evidência é descritiva (o critério formal foi não informativo).
 - **Contexto e problema:** DSR = PSR com benchmark igual ao máximo esperado sob a nula, que depende de N e de V[{ŜRₙ}]. Falta definir quais tentativas entram em N e V (só a grade final? todas as já executadas?).
 - **Alternativas consideradas:** N/V apenas da grade final vs. de todo o log de tentativas.
 - **Sub-decisão pendente:** ddof da variância V entre tentativas (o texto extraído do artigo não especifica).
@@ -162,6 +170,7 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Status:** **IN PROGRESS.**
   - **Implementação (2026-11-06, Etapa B):** `core.cscv` e `experiments.cscv_input`, validados contra os 4 golden do `pbo`, inclusive o discriminante `pbo_odd`, contra a definição do artigo e contra a expectativa exata sob a nula (METHODOLOGY_CONVENTIONS.md §5.7).
   - Custo medido: 131 s com S = 16, T = 4528, N = 144. Há gatilho de otimização antes de simulações com muitas réplicas.
+  - **Otimizada (2026-11-06):** `block_partition_performance` (agregação exata de estatísticas por bloco), 1,1 s com S = 16 e N = 144. Equivalente à forma direta, ao valor exato e aos golden do R (rtol 1e-12); `cscv_pbo` passou a usá-la (METHODOLOGY_CONVENTIONS.md §7.5).
   - Abertos: o valor de S (pré-registro) e o embargo (DE-06).
 - Convenções DECIDED (2026-11-06):
   - **DE-05.a:** ω̄ = r̄/(N+1), como no artigo; o rank/N do `pbo` é descartado;
@@ -190,6 +199,10 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Status:** **IN PROGRESS.**
   - **Regra de construção DECIDED (2026-11-06):** a matriz M tem retornos diários realizados, posições com informação até t−1 e um calendário comum iniciado após a janela de formação mais longa. Por isso a purga é desnecessária.
   - **Embargo:** não adotado, em aberto com critério de adoção (afastamento sistemático da PBO na simulação da grade sem sinal).
+  - **Embargo — DECIDED: não adotar (2026-11-06), para a grade DE-01:**
+    - **Critério:** o de §5.6, corrigido antes da execução registrada pelas emendas 2 e 2b. A linha de base passou a ser a permutação de linhas, porque o valor exato para configurações permutáveis confunde estrutura transversal com dependência temporal.
+    - **Evidência** (`run-36aa72b3…`): nenhum efeito temporal detectável em 12 estruturas (efeito mínimo detectável ≈ 0,02 de PBO); embargo de 21/63 sem ganho; |ACF| ≤ 0,003.
+    - **Limitação:** cenários sintéticos sem dependência na média. Revisar só se a construção da carteira mudar.
   - Análise em METHODOLOGY_CONVENTIONS.md §5.6.
 - **Contexto e problema:** Formação e manutenção sobrepostas geram autocorrelação nos retornos e dependência entre blocos CSCV adjacentes.
 - **Alternativas consideradas:** embargo/purga entre blocos; blocos longos em relação à janela máxima de formação; correção de autocorrelação no PSR; manutenção sem sobreposição.
@@ -201,7 +214,8 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Achado descritivo (2026-11-06, `run-de53b361…`):**
   - Sob a nula global, com tentativas **independentes**, M = 100 e T = 1250, a regra DSR > 0,95 rejeitou em só 0,06% das réplicas (V entre tentativas) a 0,13% (V_H0).
   - Isso é coerente com SR₀ = E[máx], que não é o quantil de 95% do máximo [inferência].
-  - **O DSR com limiar 0,95 não é um teste de nível 5%.** O critério de sucesso 2 ("próxima do nível nominal") precisa ser reformulado antes de qualquer simulação de validação: o que exatamente o DSR afirma controlar.
+  - **O DSR com limiar 0,95 não é um teste de nível 5%.**
+  - **Complemento (2026-11-06, grade de momentum, descritivo post hoc):** com a correlação ≈ 0,98 da grade, o par (M, V entre tentativas) rejeitou em 0–8% (média 4%). **A calibração do DSR sob a nula depende da estrutura de correlação**: perto do nominal com fator comum dominante, muito abaixo com tentativas independentes. O critério de sucesso 2 precisa dizer em que estrutura vale. O critério de sucesso 2 ("próxima do nível nominal") precisa ser reformulado antes de qualquer simulação de validação: o que exatamente o DSR afirma controlar.
 - **Contexto e problema:** Critério de sucesso: "taxa de falsa descoberta próxima do nível nominal". Faltam processo gerador, α, nº de réplicas, tolerância e definição de "descoberta".
 - **Alternativas consideradas:** normal i.i.d.; permutação/bootstrap de retornos reais (preserva marginais, remove sinal); geração em preços (passando pela regra) vs. em retornos de estratégias.
 - **Justificativa:** —
@@ -224,6 +238,9 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Status:** PENDING
 - **Contexto e problema:** A hipótese fala em DSR "bem menor" que o Sharpe bruto e PBO "material", sem limiares.
 - **Alternativas consideradas:** limiares fixos (ex.: DSR > 0,95 como "significativo"; PBO > 0,5 como "material") vs. reporte contínuo sem dicotomia.
+- **Evidência (2026-11-06, `run-36aa72b3…`):**
+  - Sob a nula, a PBO de **um** conjunto de dados da grade varia muito: percentis 5% / 50% / 95% entre [0,02–0,21] / [0,36–0,61] / [0,76–0,96]. Uma PBO de 0,9 ocorre sem nenhum sinal.
+  - "Material" deve ser definida contra a distribuição nula da **própria família**, obtida por simulação pré-registrada, e não contra 0,5.
 - **Justificativa:** — (fixar antes de ver resultados)
 
 ### DE-10 — Revisão de literatura

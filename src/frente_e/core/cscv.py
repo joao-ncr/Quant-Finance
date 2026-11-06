@@ -29,7 +29,7 @@ from scipy import stats
 
 from frente_e.core.contracts import ReturnsMatrix
 from frente_e.core.metrics import sharpe_ratio
-from frente_e.errors import ContractViolationError
+from frente_e.errors import ContractViolationError, DegenerateSeriesError
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
@@ -79,7 +79,12 @@ def in_sample_block_sets(n_blocks: int) -> IntArray:
 def partition_performance(
     values: FloatArray, n_blocks: int
 ) -> tuple[IntArray, FloatArray, FloatArray]:
-    """Sharpe (DE-02) de cada configuração em J e J̄, para cada partição.
+    """Sharpe (DE-02) de cada configuração em J e J̄, para cada partição — forma direta.
+
+    **Implementação de referência:** concatena as linhas de J e J̄ e chama
+    :func:`sharpe_ratio`. :func:`cscv_pbo` usa :func:`block_partition_performance`, que é
+    equivalente (rtol 1e-12, atol 1e-15, a tolerância dos golden do R) e cerca de 100 vezes
+    mais rápida.
 
     Exige T % S == 0 (DE-05.b: o descarte das observações excedentes é decisão da camada
     de experimento, nunca do núcleo). Não verifica colunas idênticas: isso é feito por
@@ -108,6 +113,81 @@ def partition_performance(
     return blocks, perf_is, perf_oos
 
 
+def block_partition_performance(
+    values: FloatArray, n_blocks: int, *, embargo: int = 0, chunk: int = 512
+) -> tuple[IntArray, FloatArray, FloatArray]:
+    """Mesmo resultado de :func:`partition_performance`, por estatísticas de bloco.
+
+    Cada bloco é resumido uma vez (n, média, M2 centrado, em dois passos) e as metades são
+    combinadas pela fórmula exata de agregação de grupos:
+    ``M2 = Σ M2_b + Σ n_b (μ_b − μ)²``. É algebricamente idêntico ao cálculo direto. O custo
+    cai de O(C·T·N) para O(C·S·N). Precisão (testada): no regime de retornos (|μ|/σ ≲ 1),
+    concorda com :func:`partition_performance`, com o valor exato e com os golden do R em
+    rtol 1e-12. No extremo |μ|/σ ≈ 1e5 (fora do uso), o termo μ_b − μ perde dígitos: erro
+    relativo observado ≈ 2e-12, contra ≈ 0 da forma direta; a fórmula ingênua Σx² − nμ²
+    colapsaria.
+
+    ``embargo`` = h > 0 remove as h primeiras linhas de todo bloco cujo bloco anterior
+    pertence ao **outro** conjunto (IS ou OOS), nas duas direções. **Não adotado** (DE-06,
+    METHODOLOGY_CONVENTIONS.md §5.6 e §7.4): existe para o estudo do embargo. Com
+    embargo, IS e OOS podem ter tamanhos diferentes.
+    """
+    blocks = in_sample_block_sets(n_blocks)
+    x = np.asarray(values)
+    if x.dtype != np.float64 or x.ndim != 2:
+        raise ContractViolationError("values deve ser float64 2-D (T × N)")
+    n_obs, n_configs = x.shape
+    if n_obs % n_blocks:
+        raise ContractViolationError(
+            f"T = {n_obs} não é divisível por S = {n_blocks} (DE-05.b): descarte as T mod S "
+            "observações mais antigas na camada de experimento, por regra pré-registrada"
+        )
+    if not np.all(np.isfinite(x)):
+        raise ContractViolationError("values contém valores não finitos")
+    block_len = n_obs // n_blocks
+    if isinstance(embargo, bool) or not 0 <= embargo < block_len:
+        raise ContractViolationError(f"embargo deve estar em [0, {block_len}); recebido {embargo}")
+    if chunk < 1:
+        raise ContractViolationError("chunk deve ser >= 1")
+    # variante 0: bloco inteiro; variante 1: bloco sem as `embargo` primeiras linhas
+    counts = np.array([block_len, block_len - embargo], dtype=np.float64)
+    means = np.empty((2, n_blocks, n_configs))
+    m2 = np.empty((2, n_blocks, n_configs))
+    for b in range(n_blocks):
+        for variant, skip in enumerate((0, embargo)):
+            rows = x[b * block_len + skip : (b + 1) * block_len]
+            means[variant, b] = rows.mean(axis=0)
+            m2[variant, b] = np.sum((rows - means[variant, b]) ** 2, axis=0)
+    membership = np.zeros((blocks.shape[0], n_blocks), dtype=bool)
+    membership[np.arange(blocks.shape[0])[:, None], blocks] = True
+    previous = np.zeros_like(membership)  # o bloco anterior pertence ao mesmo conjunto?
+    previous[:, 1:] = membership[:, :-1]
+    perf_is = np.empty((blocks.shape[0], n_configs))
+    perf_oos = np.empty_like(perf_is)
+    for start in range(0, blocks.shape[0], chunk):
+        stop = min(start + chunk, blocks.shape[0])
+        for in_set, out in ((True, perf_is), (False, perf_oos)):
+            member = membership[start:stop] == in_set
+            switched = np.zeros_like(member)
+            switched[:, 1:] = previous[start:stop, 1:] != in_set  # bloco anterior no outro
+            variant = (switched & (embargo > 0)).astype(np.int64)
+            weight = np.where(member, counts[variant], 0.0)  # (c, S)
+            n_total = weight.sum(axis=1)
+            if np.any(n_total < 2):
+                raise DegenerateSeriesError("menos de 2 observações numa metade")
+            block_means = means[variant, np.arange(n_blocks)]  # (c, S, N)
+            block_m2 = m2[variant, np.arange(n_blocks)]
+            grand = np.einsum("cs,csn->cn", weight, block_means) / n_total[:, None]
+            spread = block_means - grand[:, None, :]
+            total_m2 = np.einsum("cs,csn->cn", member.astype(np.float64), block_m2)
+            total_m2 += np.einsum("cs,csn->cn", weight, spread**2)
+            std = np.sqrt(total_m2 / (n_total[:, None] - 1.0))
+            if np.any(std == 0.0):
+                raise DegenerateSeriesError("variância zero numa metade: Sharpe indefinido")
+            out[start:stop] = grand / std
+    return blocks, perf_is, perf_oos
+
+
 def rank_partitions(
     in_sample: FloatArray, out_of_sample: FloatArray
 ) -> tuple[IntArray, IntArray, FloatArray]:
@@ -131,7 +211,7 @@ def cscv_pbo(matrix: ReturnsMatrix, n_blocks: int) -> CSCVResult:
     if n_configs < 2:
         raise ContractViolationError("PBO exige N >= 2 configurações")
     _reject_identical_columns(matrix)
-    blocks, perf_is, perf_oos = partition_performance(matrix.values, n_blocks)
+    blocks, perf_is, perf_oos = block_partition_performance(matrix.values, n_blocks)
     best, tie_size, rank = rank_partitions(perf_is, perf_oos)
     omega = rank / (n_configs + 1)
     logit = np.log(omega) - np.log1p(-omega)

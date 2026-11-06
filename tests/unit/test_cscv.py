@@ -8,6 +8,7 @@ E[φ] = P(2·r̄ ≤ N + 1) = ⌊(N + 1)/2⌋ / N (0,6 para N = 5; seria 0,4 com
 from __future__ import annotations
 
 import math
+from fractions import Fraction
 
 import numpy as np
 import pytest
@@ -15,6 +16,7 @@ from numpy.typing import NDArray
 
 from frente_e.core.contracts import ReturnsMatrix
 from frente_e.core.cscv import (
+    block_partition_performance,
     cscv_pbo,
     in_sample_block_sets,
     n_partitions,
@@ -200,3 +202,108 @@ def test_deterministic_and_read_only_input_untouched() -> None:
         np.testing.assert_array_equal(getattr(first, field), getattr(second, field))
     assert first.pbo == second.pbo
     assert first.n_in_sample_ties == 0
+
+
+# ---------------------------------------------------------- versão por blocos e embargo
+RTOL, ATOL = 1e-12, 1e-15  # mesma tolerância dos golden do R (manifest.json)
+
+
+@pytest.mark.parametrize(("t", "n", "s"), [(40, 3, 2), (120, 7, 6), (480, 20, 12), (960, 5, 16)])
+def test_block_version_is_equivalent_to_direct_reference(t: int, n: int, s: int) -> None:
+    x = _noise(200 + s, t, n)
+    blocks_a, is_a, oos_a = partition_performance(x, s)
+    blocks_b, is_b, oos_b = block_partition_performance(x, s, chunk=7)
+    np.testing.assert_array_equal(blocks_a, blocks_b)
+    np.testing.assert_allclose(is_b, is_a, rtol=RTOL, atol=ATOL)
+    np.testing.assert_allclose(oos_b, oos_a, rtol=RTOL, atol=ATOL)
+    for a, b in zip(rank_partitions(is_a, oos_a), rank_partitions(is_b, oos_b), strict=True):
+        np.testing.assert_array_equal(a, b)
+
+
+def _exact_sharpe(column: NDArray[np.float64]) -> float:
+    """Sharpe com média e variância em aritmética racional exata (só a raiz em float)."""
+    values = [Fraction(float(v)) for v in column]
+    mean = sum(values, Fraction(0)) / len(values)
+    var = sum(((v - mean) ** 2 for v in values), Fraction(0)) / (len(values) - 1)
+    return float(mean) / math.sqrt(float(var))
+
+
+def _worst_relative_errors(x: NDArray[np.float64], s: int) -> tuple[float, float]:
+    """Pior erro relativo (bloco, fórmula ingênua Σx² − nμ²) frente ao Sharpe exato IS."""
+    length = x.shape[0] // s
+    blocks, is_block, _ = block_partition_performance(x, s)
+    worst_block = worst_naive = 0.0
+    for c, combo in enumerate(blocks.tolist()):
+        rows = np.concatenate([np.arange(b * length, (b + 1) * length) for b in combo])
+        for j in range(x.shape[1]):
+            col = x[rows, j]
+            exact = _exact_sharpe(col)
+            mean = col.mean()
+            naive_var = (np.sum(col**2) - col.size * mean**2) / (col.size - 1)
+            naive = mean / math.sqrt(naive_var) if naive_var > 0 else math.inf
+            worst_block = max(worst_block, abs(is_block[c, j] / exact - 1))
+            worst_naive = max(worst_naive, abs(naive / exact - 1))
+    return worst_block, worst_naive
+
+
+def test_block_version_is_accurate_in_the_returns_regime() -> None:
+    # |μ|/σ ≈ 0,03, como retornos excedentes diários
+    worst_block, _ = _worst_relative_errors(0.0004 + _noise(211, 64, 2) * 1.2, 4)
+    assert worst_block <= RTOL
+
+
+def test_block_version_is_far_more_stable_than_naive_formula_when_ill_conditioned() -> None:
+    """|μ|/σ ≈ 1e5: o termo μ_b − μ perde dígitos (erro observado ~2e-12, acima de RTOL);
+    a fórmula ingênua colapsa. Regime fora do uso do projeto; documentado, não garantido."""
+    worst_block, worst_naive = _worst_relative_errors(1e3 + _noise(210, 64, 2), 4)
+    assert worst_naive > 1e3 * worst_block
+
+
+def _embargo_reference(x: NDArray[np.float64], s: int, h: int) -> tuple[NDArray[np.float64], ...]:
+    """Embargo pela definição: remove as h primeiras linhas de todo bloco cujo anterior
+    pertence ao outro conjunto; Sharpe direto nas linhas restantes."""
+    length = x.shape[0] // s
+    out_is: list[NDArray[np.float64]] = []
+    out_oos: list[NDArray[np.float64]] = []
+    for combo in in_sample_block_sets(s).tolist():
+        member = [b in combo for b in range(s)]
+        rows: dict[bool, list[int]] = {True: [], False: []}
+        for b in range(s):
+            skip = h if b > 0 and member[b - 1] != member[b] else 0
+            rows[member[b]].extend(range(b * length + skip, (b + 1) * length))
+        for key, out in ((True, out_is), (False, out_oos)):
+            sub = x[rows[key]]
+            out.append(sub.mean(0) / sub.std(0, ddof=1))
+    return np.array(out_is), np.array(out_oos)
+
+
+@pytest.mark.parametrize("h", [1, 5, 9])
+def test_embargo_matches_definition(h: int) -> None:
+    x = _noise(220 + h, 160, 5)
+    _, is_b, oos_b = block_partition_performance(x, 8, embargo=h)
+    is_r, oos_r = _embargo_reference(x, 8, h)
+    np.testing.assert_allclose(is_b, is_r, rtol=RTOL, atol=ATOL)
+    np.testing.assert_allclose(oos_b, oos_r, rtol=RTOL, atol=ATOL)
+
+
+def test_zero_embargo_is_the_plain_cscv() -> None:
+    x = _noise(230, 120, 4)
+    a = block_partition_performance(x, 6)
+    b = block_partition_performance(x, 6, embargo=0)
+    for u, v in zip(a, b, strict=True):
+        np.testing.assert_array_equal(u, v)
+
+
+@pytest.mark.parametrize("h", [-1, 20, 100])
+def test_invalid_embargo(h: int) -> None:
+    with pytest.raises(ContractViolationError, match="embargo"):
+        block_partition_performance(_noise(240, 80, 3), 4, embargo=h)
+
+
+def test_cscv_pbo_uses_block_version_and_matches_reference_ranks() -> None:
+    x = _noise(250, 240, 9)
+    result = cscv_pbo(_matrix(x), 8)
+    _, is_a, oos_a = partition_performance(x, 8)
+    best, _, rank = rank_partitions(is_a, oos_a)
+    np.testing.assert_array_equal(result.best_in_sample, best)
+    np.testing.assert_array_equal(result.oos_rank, rank)

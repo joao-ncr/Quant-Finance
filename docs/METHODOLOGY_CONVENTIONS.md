@@ -606,10 +606,17 @@ Consequências e limitações:
 |---|---|---|---|---|
 | base | 1,2% | U(0,7; 1,3) | U(1,2%; 2,5%) | — |
 | low_common | 0,5% | U(0,7; 1,3) | U(1,2%; 2,5%) | — |
-| vol_clustering | 1,2% | U(0,7; 1,3) | U(1,2%; 2,5%) | (0,98; 0,15) |
+| vol_clustering | 1,2% | U(0,7; 1,3) | U(1,2%; 2,5%) | (0,98; **0,06**), emenda 3 |
 | heterogeneous | 1,2% | U(0,3; 1,7) | U(0,5%; 4%) | — |
 
 O gerador separa a dependência (fator comum, heterogeneidade, aglomeração de volatilidade) da previsibilidade, que é nula: retornos independentes no tempo na média. Testes em `tests/unit/test_null_models.py`.
+
+**Emenda 3 (2026-11-06): parâmetro de `vol_clustering` corrigido.**
+- **Valor original e falha:** com σ_h = 0,15, o desvio estacionário de log σ era 0,15/√(1 − 0,98²) ≈ 0,75, e a volatilidade chegava a ~10 vezes o nível médio. Na execução registrada `run-7dd0ad1965784ee8ae05681dc337c168` (`sim-grid-neff-embargo`), o gerador recusou um retorno ≤ −100% e a execução **falhou**. A falha está no ledger.
+- **Exposição a resultados:** nenhum resultado foi produzido nem visto, porque a falha ocorreu antes da agregação.
+- **Novo valor:** σ_h = 0,06, com desvio estacionário ≈ 0,30 e multiplicadores de volatilidade em [0,4; 2,5] em 99,7% do tempo [operacional].
+- **Execução de mecânica da Etapa A:** `run-de18681b…` usou o valor antigo, registrado nos seus parâmetros, numa réplica sem falha. O resumo em §7.2 refere-se a esse valor.
+- **Prevenção:** `tests/integration/test_momentum_scenarios.py` gera todos os cenários com 20 sementes.
 
 **Execução de mecânica** (`run-de18681ba37247d788bc0db5233746e1`, `sim-momentum-mechanics`, `RunKind.SYNTHETIC`; artefato `10e56474…`): F144 em cada cenário, uma réplica.
 - Em todos os cenários: 6049 linhas (2001-12-04 a 2025-02-07) e 290 formações; zero empates na fronteira, compras adiadas e dias de preço defasado (painel completo).
@@ -623,3 +630,113 @@ O gerador separa a dependência (fator comum, heterogeneidade, aglomeração de 
 | heterogeneous | 0,877 | 0,969 | 0,9995 |
 
 - **[Fato]** A carteira só comprada herda o fator de mercado, e as 144 configurações são fortemente correlacionadas, como antecipado em §6.1. **[Inferência]** Isso coloca a grade na região de §4.5 em que o fator comum domina a correlação.
+
+### 7.3 Etapa B — protocolo de N efetivo e V na grade (fixado antes da execução registrada)
+**Experimento:** `experiments.grid_study`, `sim-grid-neff-embargo`, `RunKind.SYNTHETIC`.
+- 50 réplicas × 4 cenários (§7.2), com F4, F16 e F144 extraídos da mesma grade F144.
+- Por réplica, dois conjuntos independentes (A, B) e uma permutação de linhas de A.
+
+**Grandezas, todas separadas:**
+
+| Grandeza | Definição |
+|---|---|
+| Correlação entre configurações | Ĉ = correlação de Pearson das séries de excesso da família em A |
+| Autocorrelação dentro de uma configuração | média entre configurações da ACF nos lags 1, 5, 21 e 63 (F144) |
+| V entre tentativas | variância amostral (ddof = 1) dos ŜR da família numa réplica |
+| V marginal | média, entre configurações, da variância de ŜR_i entre réplicas: a variância verdadeira do estimador |
+| V teórica sob H₀ | 1/(T − 1), com T = linhas do calendário comum |
+| Alvo | E[máx ŜR] da família, média entre réplicas |
+| N* de referência | f⁻¹(E[máx]/√V_marginal) (None se < 2) |
+
+**Avaliação de pares (N̂, V)** (emenda 1 de §4.5):
+- erro relativo `E[√V·f(N̂)]/E[máx] − 1`, com N̂ calculado sobre Ĉ **em cada réplica** (uso realista), com erro-padrão pelo método delta pareado;
+- cada um dos 6 estimadores × {V entre tentativas, V_H0};
+- N̂ < 2 em alguma réplica torna o par indefinido na estrutura (DE-04.c).
+
+**Regra de seleção** (§4.2, emenda 1 e acréscimo da emenda 2, registrado agora e antes da execução):
+1. estruturas = 9 genéricas (`run-de53b361…`, Tabelas 1 e 2 de §4.5, carregadas pelo SHA-256 do artefato) + 12 da grade (4 cenários × 3 famílias);
+2. **admissível** = par definido em todas as estruturas e **nunca anticonservador** além de 2 erros-padrão (erro < −2·EP). Este requisito é **novo**: a regra original (argmin do pior |erro|) sempre escolheria algo, inclusive um par anticonservador, o que inflaria falsas descobertas;
+3. principal = admissível com menor pior |erro|; empate (diferença ≤ 2 EP) → mais estruturas com erro ≥ 0 → menor pior erro;
+4. sem admissível → **em aberto**;
+5. **alcance:** a seleção vale **sob a nula global**. A confirmação depende do desenho não nulo de DE-07, porque V_H0 é exato sob a nula por construção (§4.5).
+
+### 7.4 Etapa B — protocolo do embargo (emendas 2 e 2b ao critério de §5.6)
+**Problema do critério original de §5.6 (identificado antes de qualquer execução registrada):**
+- §5.6 compara a PBO da grade com "o valor obtido com configurações independentes", E[φ] = ⌊(N+1)/2⌋/N.
+- Esse valor exato depende de as configurações serem permutáveis. Configurações correlacionadas e heterogêneas mudam E[φ] **sem nenhum vazamento**.
+- O critério confundiria estrutura transversal com dependência IS/OOS.
+
+**Emenda 2 — metades independentes:** φ_indep usa o desempenho IS de A e o OOS do mesmo bloco complementar de B. Preserva a estrutura transversal e elimina a dependência entre metades.
+
+**Emenda 2b — permutação de linhas** (motivo registrado com transparência):
+- **O que motivou:** a réplica usada para cronometrar o estudo (não registrada, não reportada como resultado) mostrou, em F144 / base, φ = 0,95 sem embargo, 0,66 com metades independentes e 0,94 / 0,91 com embargo de 21 / 63.
+- **Leitura [inferência]:** a diferença grande não vem de dependência temporal: o embargo quase não a altera e a ACF é pequena. Vem da **complementaridade** das metades numa mesma amostra: m_IS + m_OOS = 2·m_total para a média do fator comum. Configurações com exposição diferente ao fator comum trocam de posição entre metades.
+- **Consequência:** as metades independentes eliminam a complementaridade **e** a dependência temporal, então não isolam o que o embargo pode corrigir.
+- **O que foi acrescentado:** φ_perm é a CSCV sobre as linhas de A **permutadas**, com a mesma permutação para todas as configurações. Isso destrói a dependência temporal e preserva a complementaridade e a correlação transversal.
+
+**Regra do embargo:**
+- adotar se, em alguma estrutura (cenário × família), |E[φ − φ_perm]| > 2 EP (efeito temporal detectável) **e** algum embargo h ∈ {21, 63} reduzir |E[φ_h − φ_perm]| em mais de 2 EP;
+- caso contrário, não adotar, com a evidência registrada;
+- embargo = descartar as h primeiras linhas de todo bloco cujo bloco anterior pertence ao outro conjunto (`core.cscv.block_partition_performance`, testado contra a definição);
+- S = 16, que é o valor da regra de §5.5 para T = 6048 e H_max = 252 (bloco de 378 ≥ 252).
+
+**Medida descritiva, sem regra:** E[φ − φ_indep] (efeito de complementaridade). Se for grande, é um achado relevante para DE-09: a PBO sob a nula desta família não seria 0,5, e "PBO material" precisaria ser interpretada contra a distribuição nula da própria família.
+
+### 7.5 Otimização da CSCV (gatilho de §5.5 atingido)
+- **Medição:** no tamanho da simulação, a forma direta levou 23 s (F16) e cerca de 131 s (F144) por CSCV com S = 16. O estudo exige 4 CSCVs por família e réplica.
+- **Implementação:** `block_partition_performance`, com estatísticas por bloco (n, média, M2 centrado) e agregação exata de grupos. Resultado: F144 com S = 16 em **1,1 s** e F16 em 0,17 s.
+- **Equivalência (testada):**
+  - blocos e postos idênticos;
+  - Sharpes dentro de rtol 1e-12 / atol 1e-15 frente à forma direta, ao valor exato (aritmética racional) e aos 11 golden do R;
+  - no extremo |μ|/σ ≈ 1e5 (fora do uso), o erro relativo observado é ≈ 2e-12 e a forma direta é mais precisa; a fórmula ingênua Σx² − nμ² colapsaria.
+- `cscv_pbo` passou a usar a versão por blocos; a forma direta permanece como referência dos testes.
+
+### 7.6 Resultados da Etapa B (`run-36aa72b3fe09461b8fe423cc7451d134`)
+**Execução e falha anterior:**
+- `sim-grid-neff-embargo`, 200 réplicas (50 × 4 cenários), ≈ 47 min (≈ 14 s por réplica; CSCV F144 com S = 16 ≈ 1,1 s).
+- Artefato `c21b4ee1…` (1 MB, fora do Git). Código registrado como *dirty*; o commit da Etapa B contém exatamente esse código.
+- A tentativa anterior `run-7dd0ad19…` falhou (emenda 3) e está no ledger.
+
+**Tabela 3 — estrutura da grade sob a nula** (médias sobre 50 réplicas; V em unidades de SR diário²; V_H0 = 1/(T−1) = 1,65e-4):
+
+| Cenário / família | corr. média entre configurações | E[máx ŜR] ± EP | V marginal | V entre tentativas | N* (V marginal) |
+|---|---|---|---|---|---|
+| base / F4 | 0,989 | −0,0003 ± 0,0015 | 1,10e-4 | 2,2e-6 | — (< 2) |
+| base / F16 | 0,987 | 0,0013 ± 0,0014 | 1,07e-4 | 2,6e-6 | — |
+| base / F144 | 0,983 | 0,0032 ± 0,0014 | 1,06e-4 | 3,3e-6 | — |
+| heterogeneous / F4 | 0,979 | 0,0044 ± 0,0015 | 1,14e-4 | 4,1e-6 | — |
+| heterogeneous / F16 | 0,974 | 0,0063 ± 0,0015 | 1,17e-4 | 5,3e-6 | 2,15 |
+| heterogeneous / F144 | 0,967 | 0,0089 ± 0,0015 | 1,16e-4 | 6,3e-6 | 2,87 |
+| low_common / F4 | 0,954 | 0,0021 ± 0,0020 | 1,98e-4 | 8,6e-6 | — |
+| low_common / F16 | 0,943 | 0,0054 ± 0,0019 | 1,89e-4 | 1,21e-5 | — |
+| low_common / F144 | 0,928 | 0,0092 ± 0,0019 | 1,83e-4 | 1,42e-5 | 2,40 |
+| vol_clustering / F4 | 0,990 | 0,0019 ± 0,0018 | 1,67e-4 | 1,4e-6 | — |
+| vol_clustering / F16 | 0,987 | 0,0031 ± 0,0018 | 1,63e-4 | 1,8e-6 | — |
+| vol_clustering / F144 | 0,984 | 0,0049 ± 0,0017 | 1,62e-4 | 2,3e-6 | — |
+
+- **Autocorrelação dentro das configurações (F144):** |ACF| ≤ 0,003 nos lags 1, 5, 21 e 63, em todos os cenários, contra 2/√T ≈ 0,026. Sem dependência serial detectável na média, coerente com §5.6 (diferença de martingal sob a nula).
+- **V marginal frente a V_H0:** de −36% a +20%. Com 50 réplicas, o erro relativo de uma variância é ≈ 20% e as configurações quase não diversificam esse erro (correlação ≈ 0,98). A diferença é compatível com ruído de Monte Carlo; **não** é evidência contra V_H0 como variância marginal.
+
+**N efetivo e V — leituras:**
+1. **[Fato]** Com correlação de 0,93 a 0,99 (fator de mercado numa carteira só comprada), **E[máx ŜR] é estatisticamente indistinguível de zero** em 8 das 12 estruturas. N* só é definido em 3 delas.
+2. **[Fato]** O critério pré-registrado (§4.2/§7.3: erro relativo `E[pred]/E[máx] − 1`) divide por esse alvo quase nulo e ruidoso, produzindo erros de −647% a +5384%. Aplicada mecanicamente, a regra "seleciona" `gao + V_H0`, com pior erro de 2710%. **Essa seleção não é adotada: o critério é não informativo nesta estrutura. Nenhum estimador foi validado.** A saída mecânica fica registrada no artefato, sem edição.
+3. **[Fato]** V entre tentativas = 2–8% de V marginal (≈ 1 − ρ̄). Nyholt, Galwey e A.3 dão N̂ < 2 (fora do domínio, DE-04.c) em F4/F16 de vários cenários. Os estimadores por autovalores enxergam o fator comum e concluem que a família vale cerca de uma tentativa.
+4. **[Post hoc, descritivo, não usado para decidir]** Na escala do PSR, z = (E[pred] − E[máx])/√V_H0:
+   - (M, V entre tentativas): |z| ≤ 0,20 em todas as 12 estruturas; taxa de DSR > 0,95 sob a nula entre 0 e 0,08 (média 0,04; EP ≈ 0,03 com 50 réplicas);
+   - (N efetivo, V entre tentativas): até 0,10 (anticonservador, como previsto em §4.3);
+   - V_H0: conservador demais (taxas ≤ 0,02, |z| até 2,4).
+   - Isso **corrobora** o primário provisório da emenda 1, que foi registrado antes destes dados.
+5. **[Inferência]** Com um fator comum dominante, ŜR_máx = componente comum + máximo dos componentes específicos. O componente comum tem variância próxima da variância de estimação usada no PSR, então PSR(SR₀) com SR₀ ≈ E[máx] tende a ficar próximo da calibração nominal. No caso independente (§4.5), a taxa foi 0,06–0,13%. **A calibração do DSR sob a nula depende da estrutura de correlação** (entrada direta para DE-07).
+
+**Embargo — leituras:**
+- A regra (emenda 2b) dá **não adotar**. Em nenhuma das 12 estruturas |E[φ − φ_perm]| > 2 EP (maior: base/F144, −0,018 ± 0,009, 1,9 EP), e o embargo de 63 nunca reduziu a diferença.
+- Efeito mínimo detectável ≈ 0,02 de PBO.
+- **[Fato]** A "complementaridade" inferida da réplica de cronometragem (§7.4) **não se confirmou em média**: E[φ − φ_indep] oscila entre −0,10 e +0,08, com sinal variável, quase sempre dentro de 2 EP. A réplica de cronometragem (φ = 0,95) estava na cauda da distribuição.
+- **[Fato, relevante para DE-09]** A distribuição nula da PBO **num único conjunto de dados** é muito larga: percentis 5% / 50% / 95% entre [0,02–0,21] / [0,36–0,61] / [0,76–0,96], conforme a estrutura. Uma PBO de 0,9 ocorre sob a nula. A média nula também não é exatamente 0,5 (base/F16: 0,403 ± 0,033), porque as configurações não são permutáveis.
+
+**Proposta para o próximo protocolo (emenda 4, PENDENTE, não executada):**
+- trocar o erro relativo por **erro padronizado na escala do PSR** (z acima) e pela **calibração** P(DSR > 0,95) sob a nula;
+- usar ≥ 500 réplicas por estrutura (EP da taxa ≈ 1%), sem CSCV, para conter o custo (≈ 4 s por réplica);
+- considerar estimar N efetivo sobre a correlação dos **componentes específicos** (desvios da média transversal), uma ideia **sem fonte conferida**.
+- Tudo isso a pré-registrar antes de executar, de preferência junto com o desenho não nulo de DE-07.
+

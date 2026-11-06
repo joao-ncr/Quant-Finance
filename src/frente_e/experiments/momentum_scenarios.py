@@ -76,7 +76,9 @@ SCENARIOS: dict[str, JsonValue] = {
         "beta_range": [0.7, 1.3],
         "idio_vol_range": [0.012, 0.025],
         "vol_persistence": 0.98,
-        "vol_of_vol": 0.15,
+        # emenda 3 (2026-11-06): era 0,15 -> desvio estacionário de log σ ≈ 0,75, que gerou
+        # retorno <= −100% (run-7dd0ad1965784ee8ae05681dc337c168, falha registrada)
+        "vol_of_vol": 0.06,
     },
     "heterogeneous": {
         "param_stream": 4,

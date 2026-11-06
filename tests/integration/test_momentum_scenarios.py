@@ -59,3 +59,11 @@ def test_mechanics_run_is_recorded_and_reconstructible(tmp_path: Path) -> None:
     assert summary["n_configs"] == 16
     assert summary["deferred_entries"] == 0  # painel completo
     assert -1.0 <= summary["config_correlation_min"] <= summary["config_correlation_max"] <= 1.0
+
+
+@pytest.mark.parametrize("name", sorted(_SCENARIOS))
+def test_every_scenario_generates_valid_prices_for_many_seeds(name: str) -> None:
+    """Cenário inválido (retorno <= −100%) deve ser pego aqui, não numa execução longa."""
+    for seed in range(20):
+        panel, _ = ms.scenario_panel(_SCENARIOS[name], ms.COMMON, generator_for(seed, 99))
+        assert np.all(panel.total_return_index > 0)

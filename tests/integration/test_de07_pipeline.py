@@ -202,9 +202,84 @@ def test_pooled_sharpe_equals_direct_concatenation() -> None:
     assert np.allclose(sr, allx.mean(axis=0) / allx.std(axis=0, ddof=1), rtol=1e-12)
 
 
-def _fake_truth(delta_of_scale: Any) -> Any:
+def test_jackknife_se_matches_brute_force_leave_one_replicate_out() -> None:
+    """O EP é o jackknife que retira uma réplica inteira, aplicado ao SR agregado e ao
+    máximo, idêntico à recomputação direta sem cada réplica."""
+    rng = generator_for(1, 3)
+    blocks = [rng.normal(0.02, 1.0, size=(40, 3)) + rng.normal() * 0.05 for _ in range(6)]
+    parts = [_part(b) for b in blocks]
+    _, se, _ = cal.pooled_sharpe(parts)
+
+    def pooled(x: Any) -> Any:
+        return x.mean(axis=0) / x.std(axis=0, ddof=1)
+
+    loo = np.array([pooled(np.vstack(blocks[:r] + blocks[r + 1 :])) for r in range(len(blocks))])
+    r = len(blocks)
+    expected = np.sqrt((r - 1) / r * np.sum((loo - loo.mean(axis=0)) ** 2, axis=0))
+    assert np.allclose(se, expected, rtol=1e-10)
+    maxima = loo.max(axis=1)
+    expected_max = math.sqrt((r - 1) / r * np.sum((maxima - maxima.mean()) ** 2))
+    assert float(cal.jackknife_se(maxima[:, None])[0]) == pytest.approx(expected_max)
+
+
+def _part(b: Any) -> Any:
+    return (
+        b.shape[0],
+        b.mean(axis=0),
+        np.sum((b - b.mean(axis=0)) ** 2, axis=0),
+        b.mean(axis=0) / b.std(axis=0, ddof=1),
+    )
+
+
+def test_jackknife_se_matches_replicate_level_error_for_iid_replicates() -> None:
+    """Com réplicas i.i.d., o EP do SR agregado ≈ desvio entre réplicas do SR / √R."""
+    rng = generator_for(1, 4)
+    reps = 400
+    parts = [_part(rng.normal(0.05, 1.0, size=(250, 1))) for _ in range(reps)]
+    _, se, _ = cal.pooled_sharpe(parts)
+    per_rep = np.array([p[3][0] for p in parts])
+    assert float(se[0]) == pytest.approx(per_rep.std(ddof=1) / math.sqrt(reps), rel=0.05)
+
+
+LEVELS = [0.0, 1.0, 2.5, 4.0]
+
+
+def test_precision_limit_is_half_the_distance_to_the_nearest_level() -> None:
+    assert cal.precision_limit(1.0, LEVELS) == pytest.approx(0.5)
+    assert cal.precision_limit(2.5, LEVELS) == pytest.approx(0.75)
+    assert cal.precision_limit(4.0, LEVELS) == pytest.approx(0.75)
+
+
+@pytest.mark.parametrize(
+    ("achieved", "se", "target", "status"),
+    [
+        (1.10, 0.10, 1.0, "calibrada"),  # |d| = 0,10 ≤ 0,20
+        (1.20, 0.10, 1.0, "calibrada"),  # na borda: |d| = 2·EP
+        (1.45, 0.15, 1.0, "reprovada"),  # |d| = 0,45 > 0,30
+        (1.05, 0.26, 1.0, "inconclusiva"),  # 2·EP = 0,52 > 0,5: EP grande não aprova
+        (9.00, 0.40, 2.5, "inconclusiva"),  # inconclusiva tem precedência
+        (2.40, 0.30, 2.5, "calibrada"),  # 2·EP = 0,60 ≤ 0,75
+    ],
+)
+def test_classification_rule(achieved: float, se: float, target: float, status: str) -> None:
+    verdict = cal.classify(achieved, se, target, LEVELS)
+    assert verdict["status"] == status
+    assert verdict["inconclusive"] is (status == "inconclusiva")
+    assert verdict["tolerance"] == pytest.approx(2 * se)
+    assert verdict["abs_difference"] == pytest.approx(abs(achieved - target))
+
+
+def test_classification_rejects_invalid_inputs() -> None:
+    with pytest.raises(ContractViolationError):
+        cal.classify(math.nan, 0.1, 1.0, LEVELS)
+    with pytest.raises(ContractViolationError):
+        cal.classify(1.0, -0.1, 1.0, LEVELS)
+
+
+def _fake_truth(delta_of_scale: Any, se: Any = 0.05) -> Any:
     def fake(params: Any, signal: Any, root: int, prefix: Any, n: int, *, n_workers: int) -> Any:
         delta = delta_of_scale(signal["scale"], tuple(prefix)) if signal else 0.0
+        delta_se = se(tuple(prefix)) if callable(se) else se
         return {
             "config_ids": F144,
             "true_sharpe": [delta / math.sqrt(399)] * 144,
@@ -212,7 +287,7 @@ def _fake_truth(delta_of_scale: Any) -> Any:
             "n_rows": 400,
             "n_replicates": n,
             "delta_star": delta,
-            "delta_star_se": 0.0,
+            "delta_star_se": delta_se,
             "best_config": F144[0],
         }
 
@@ -227,9 +302,20 @@ CAL_SMALL = {
     "grid_replicates": 2,
     "oracle_replicates": 2,
 }
+ALL_CELLS = {
+    "mom_h63_d1",
+    "mom_h63_d2.5",
+    "mom_h63_d4",
+    "mom_h252_d1",
+    "mom_h252_d2.5",
+    "mom_h252_d4",
+    "com_d2.5",
+}
 
 
-def test_calibration_extends_grid_interpolates_and_refines(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_calibration_extends_grid_interpolates_and_classifies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # δ*(s) = 1000·s: exige estender a grade para baixo (alvo 1) e para cima (alvo 4)
     monkeypatch.setattr(cal, "truth_table", _fake_truth(lambda s, prefix: 1000.0 * s))
     result = cal.calibrate(CAL_SMALL, 1, n_workers=1)
@@ -237,27 +323,56 @@ def test_calibration_extends_grid_interpolates_and_refines(monkeypatch: pytest.M
     assert cells["mom_h63_d2.5"]["signal"]["scale"] == pytest.approx(0.0025)
     assert cells["mom_h252_d1"]["signal"]["scale"] == pytest.approx(0.001)
     assert cells["mom_h252_d4"]["signal"]["scale"] == pytest.approx(0.004)
-    assert "com_d2.5" in cells
+    assert result["all_calibrated"] is True
+    assert set(result["statuses"]) == ALL_CELLS
+    verdict = cells["mom_h252_d1"]["calibration"]
+    assert verdict["target_delta"] == 1.0
+    assert verdict["achieved_delta"] == pytest.approx(1.0)
+    assert verdict["delta_se"] == 0.05
+    assert verdict["status"] == "calibrada"
 
-    # oráculo com viés de 0,8 em relação à grade: a verificação falha, um refinamento pela
-    # inclinação local (fluxo próprio, mesmo viés) acerta o alvo
+
+def test_rejected_cell_is_refined_once_and_kept_with_its_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # oráculo com viés de 0,8: a verificação reprova, o refinamento (mesmo viés) acerta
     def biased(s: float, prefix: tuple[int, ...]) -> float:
         oracle = prefix[0] in (cal.STAGE_ORACLE, cal.STAGE_REFINE)
         return 1000.0 * s * (0.8 if oracle else 1.0)
 
     monkeypatch.setattr(cal, "truth_table", _fake_truth(biased))
     refined = cal.calibrate(CAL_SMALL, 1, n_workers=1)["cells"]["mom_h63_d4"]
-    assert len(refined["attempts"]) == 2
+    assert [a["stage"] for a in refined["attempts"]] == ["verification", "refinement"]
+    assert refined["attempts"][0]["status"] == "reprovada"
+    assert refined["calibration"]["status"] == "calibrada"
     assert refined["truth"]["delta_star"] == pytest.approx(4.0)
 
-    # o refinamento também erra: erro explícito, sem segunda tentativa silenciosa
+    # o refinamento também erra: a célula sai reprovada, sem interromper as demais
     def drifting(s: float, prefix: tuple[int, ...]) -> float:
         factor = {cal.STAGE_ORACLE: 0.5, cal.STAGE_REFINE: 0.25}.get(prefix[0], 1.0)
         return 1000.0 * s * factor
 
     monkeypatch.setattr(cal, "truth_table", _fake_truth(drifting))
-    with pytest.raises(ContractViolationError, match="não convergiu"):
-        cal.calibrate(CAL_SMALL, 1, n_workers=1)
+    result = cal.calibrate(CAL_SMALL, 1, n_workers=1)
+    assert result["all_calibrated"] is False
+    assert result["statuses"]["mom_h63_d4"] == "reprovada"
+    assert set(result["statuses"]) == ALL_CELLS  # todas classificadas
+
+
+def test_high_uncertainty_is_inconclusive_and_not_refined(monkeypatch: pytest.MonkeyPatch) -> None:
+    """EP grande não aprova: com 2·EP acima do limite de precisão, a célula é inconclusiva
+    mesmo com δ̂* exatamente no alvo, e não há refinamento (mesmo R, mesma imprecisão)."""
+
+    def se(prefix: tuple[int, ...]) -> float:
+        return 0.6 if prefix[0] == cal.STAGE_ORACLE else 0.05
+
+    monkeypatch.setattr(cal, "truth_table", _fake_truth(lambda s, p: 1000.0 * s, se))
+    result = cal.calibrate(CAL_SMALL, 1, n_workers=1)
+    cell = result["cells"]["mom_h252_d1"]
+    assert cell["calibration"]["status"] == "inconclusiva"
+    assert cell["calibration"]["abs_difference"] == pytest.approx(0.0, abs=1e-12)
+    assert len(cell["attempts"]) == 1
+    assert result["all_calibrated"] is False
 
 
 def test_calibration_run_is_recorded_as_calibration_phase(
@@ -565,6 +680,7 @@ def _fake_calibration() -> dict[str, Any]:
         return {
             "hypothesis": hyp,
             "signal": signal,
+            "calibration": {"status": "calibrada"},
             "truth": {"config_ids": F144, "true_sharpe": [0.01] * 144, "n_rows": 6049},
         }
 
@@ -579,7 +695,7 @@ def _fake_calibration() -> dict[str, Any]:
     return {"grids": {}, "cells": cells}
 
 
-def _build(tmp_path: Path) -> tuple[Path, Path]:
+def _build(tmp_path: Path, calibration: dict[str, Any] | None = None) -> tuple[Path, Path]:
     from frente_e.experiments import de07_build_manifest as builder
 
     (tmp_path / "docs").mkdir(exist_ok=True)
@@ -587,7 +703,7 @@ def _build(tmp_path: Path) -> tuple[Path, Path]:
     (tmp_path / "docs" / "DE07_PROTOCOL.md").write_text("protocolo\n", encoding="utf-8")
     return builder.build(
         project_root=tmp_path,
-        calibration=_fake_calibration(),
+        calibration=calibration or _fake_calibration(),
         calibration_run_id="run-" + "0" * 32,
         calibration_seed=3,
         calibration_sha256="a" * 64,
@@ -632,3 +748,14 @@ def test_manifest_builder_is_deterministic_and_respects_d5_and_budget(tmp_path: 
     (tmp_path / "docs" / "DE07_PROTOCOL.md").write_text("alterado\n", encoding="utf-8")
     with pytest.raises(ContractViolationError, match="SHA-256"):
         man.load_manifest(manifest_path.relative_to(tmp_path), project_root=tmp_path)
+
+
+@pytest.mark.parametrize("status", ["inconclusiva", "reprovada"])
+def test_manifest_builder_refuses_cells_that_are_not_calibrated(
+    tmp_path: Path, status: str
+) -> None:
+    calibration = _fake_calibration()
+    calibration["cells"]["mom_h252_d1"]["calibration"]["status"] = status
+    with pytest.raises(ContractViolationError, match="não calibradas"):
+        _build(tmp_path, calibration)
+    assert not (tmp_path / "configs" / "studies" / "de07_confirmatory_v1.toml").exists()

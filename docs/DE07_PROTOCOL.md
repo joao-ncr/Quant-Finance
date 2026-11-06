@@ -324,7 +324,7 @@ a_i,t = φ·a_i,t−1 + √(1 − φ²)·s_a·ξ_i,t,   φ = 2^(−1/h)
 1. Para h ∈ {63, 252}: δ̂*(s) numa grade s ∈ {0,00025; 0,0005; 0,001; 0,002; 0,004} (desvio estacionário diário de a_i,t), com 30 réplicas e **números aleatórios comuns** entre escalas. A grade é estendida por fatores de 2 se não cobrir os alvos (até 4 vezes de cada lado).
 2. δ̂*(s) deve ser estritamente crescente; caso contrário, erro.
 3. s(alvo) vem da interpolação linear em (log s, log δ̂*).
-4. Verificação com fluxo independente e 100 réplicas, que produz a tabela de SR verdadeiros congelada no manifesto. Aceita se |δ̂* − alvo| ≤ 0,25 (≈ 2,5 erros-padrão). Senão, há um único refinamento pela inclinação local, com outro fluxo, e nova verificação; se falhar, erro, e a execução falha no ledger.
+4. Verificação com fluxo independente e 100 réplicas, que produz a tabela de SR verdadeiros congelada no manifesto. ~~Aceita se |δ̂* − alvo| ≤ 0,25 (≈ 2,5 erros-padrão). Senão, há um único refinamento pela inclinação local, com outro fluxo, e nova verificação; se falhar, erro, e a execução falha no ledger.~~ **Substituído pela emenda 5 (§7.2.3).**
 5. H₁-com: π = 2,5·σ_EW/√(T − 1), com σ_EW exato (β̄²σ_m² + Σs_i²/n²); SR verdadeiros pelo oráculo.
 
 **Separação calibração × avaliação (testada):**
@@ -353,6 +353,34 @@ As células h = 252 com δ* ∈ {2,5; 4} e a H₁-com não foram calibradas.
 **Diagnóstico [inferência, não verificada por nova execução]:** a tolerância de 0,25 supôs um erro-padrão de δ̂* ≈ 0,1 com 100 réplicas, isto é, só o ruído i.i.d. dos retornos (≈ 1/√R). Com meia-vida longa (h = 252), as médias específicas de cada réplica persistem por cerca de um ano. Assim, o lucro de momentum realizado varia muito entre réplicas, e o erro-padrão de δ̂* fica maior; o da grade (30 réplicas) maior ainda, o que também desloca a escala interpolada. A discrepância de ≈ 0,45 entre grade e verificação é compatível com isso. Não há evidência de defeito de código: os testes do procedimento passam, e h = 63 convergiu.
 
 **Consequência:** sem tabela de verdades válida, o manifesto **não foi gerado nem congelado**. Corrigir o procedimento depois de ver a falha é uma decisão metodológica e aguarda o desenvolvedor (relatório da Etapa B). A execução falha permanece no ledger e não é descartada.
+
+### 7.2.3 Emenda 5 — tolerância proporcional à incerteza (aprovada em 2026-11-06, antes da nova calibração)
+**Decisão do desenvolvedor:** opção 1 do relatório da Etapa B (tolerância proporcional à incerteza). Ela substitui a tolerância absoluta de 0,25. A execução que falhou (`run-434c7484…`) permanece no ledger, sem alteração. D1–D7, DD-01, DE-01.h, DE-01.i e DD-03 não mudam.
+
+**Por que a tolerância absoluta era inadequada.** Os 0,25 supunham um erro-padrão de δ̂* ≈ 0,1 com 100 réplicas, ou seja, só o ruído i.i.d. dos retornos. Com meia-vida longa (h = 252), as médias específicas de uma réplica persistem por cerca de um ano, e o lucro de momentum realizado varia entre réplicas por causa do próprio sorteio do sinal. O erro-padrão real depende da célula e é desconhecido a priori: uma tolerância absoluta é estrita demais onde a incerteza é grande e frouxa demais onde é pequena.
+
+**Estimação do erro-padrão (revista).**
+| Item | Definição |
+|---|---|
+| Estatística estimada | SR_c agregado (média e variância de todas as linhas das R réplicas, combinação exata de grupos) e δ̂* = máx_c SR_c·√(T − 1) |
+| Unidade amostral independente | **a réplica** (fluxos `generator_for` distintos e independentes) |
+| Erro-padrão | **jackknife "deixa uma réplica de fora"** aplicado ao próprio estimador: o SR agregado recalculado sem a réplica r (remoção exata do grupo), EP = √((R−1)/R·Σ(θ₍₋ᵣ₎ − θ̄)²); para δ̂*, o jackknife do **máximo**, que inclui a seleção da configuração |
+| Dependência preservada | pregões e ativos de uma réplica nunca são separados: cada réplica entra ou sai inteira, com toda a dependência temporal (persistência, coortes sobrepostas) e transversal (fator comum, média transversal zero) |
+| Correção feita no código | antes, o EP era o desvio dos ŜR por réplica / √R: a unidade era correta, mas o estimador era outro (média de ŜR, não o SR agregado), e o EP de δ̂* ignorava o máximo. Agora o EP é o jackknife do estimador efetivamente reportado |
+| Hipóteses da regra de 2 EP | réplicas i.i.d. (verdadeiro por construção); δ̂* aproximadamente normal entre réplicas (TLC sobre R = 100 réplicas); jackknife consistente para o SR agregado (função suave de médias). Para o máximo, o jackknife é aproximado quando há empate próximo entre configurações; com correlação ≈ 0,98 e a vencedora estável, o efeito esperado é pequeno [inferência] |
+
+**Regra de calibração (em unidades de δ; equivalente em SR, dividindo por √(T − 1)):**
+- **calibrada:** |δ̂* − δ*| ≤ 2·EP;
+- **reprovada:** |δ̂* − δ*| > 2·EP; recebe um único refinamento pela inclinação local, com fluxo próprio, e nova classificação;
+- **inconclusiva:** 2·EP > L(δ*), com **L(δ*) = metade da distância de δ* ao nível mais próximo do desenho em {0, 1, 2,5, 4}**. Isso dá L = 0,5 para δ* = 1 (vizinho 0, a nula) e L = 0,75 para δ* = 2,5 e 4. Uma célula inconclusiva não é refinada, porque uma nova verificação com o mesmo R tem a mesma imprecisão. Ela não é aprovada nem descartada.
+
+**Justificativa de L (fixada antes da nova execução).** A calibração existe para colocar cada célula num nível de intensidade **distinguível** dos demais níveis do desenho, inclusive da nula. Se 2·EP > L, o intervalo de aceitação inclui valores mais próximos de um nível vizinho que do alvo, e "aprovar" não garantiria que a célula representa o nível pretendido. Por isso um EP grande torna a célula inconclusiva, não aprovada. O limite deriva só da grade de intensidades aprovada em D4, e não de resultados.
+
+**H₁-com.** π é analítico (σ_EW exato), então δ_EW alcançado = 2,5 por construção (classificação "calibrada", método analítico). O δ̂* em F144 e seu EP são registrados como informação.
+
+**Registro por célula:** alvo δ*, δ̂* alcançado, SR verdadeiro estimado (tabela por configuração), EP, tolerância (2·EP), limite L, |δ̂* − δ*|, status, marca de inconclusiva e tentativas. **O rótulo δ* não é o valor alcançado:** a Etapa C usa a tabela de SR verdadeiros efetivamente estimados.
+
+**Execução:** todas as células (h ∈ {63, 252} × δ* ∈ {1; 2,5; 4} e H₁-com), com **semente raiz fixa 7514066048065518955**, nova, registrada aqui antes da execução e no ledger. A grade (30 réplicas) e a verificação (100 réplicas) mantêm os fluxos separados; nenhuma réplica foi aumentada. O manifesto só é gerado se **todas** as células estiverem calibradas (o gerador recusa os outros status). Se alguma sair inconclusiva ou reprovada, o trabalho para e aguarda decisão.
 
 ### 7.3 Representatividade e redundância dos cenários nulos (§4.2 do pedido)
 | Regime | Estruturas | Cobertura | Observação |

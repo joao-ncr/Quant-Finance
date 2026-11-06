@@ -17,9 +17,14 @@ independentes, combinação exata de grupos). Não é a média dos ŜR de cada r
 2. δ̂*(s) precisa ser estritamente crescente na grade; caso contrário, erro (sem ajuste).
 3. s(alvo) por interpolação linear de log δ̂* em log s.
 4. Verificação com fluxo independente (``oracle_replicates`` réplicas): a tabela de SR
-   verdadeiros por configuração e o δ̂* verificado. Aceita se |δ̂* − alvo| ≤ ``tolerance``.
-   Senão, um único refinamento pela inclinação local em log-log e nova verificação com
-   outro fluxo; se falhar de novo, erro explícito (a execução falha no ledger).
+   verdadeiros por configuração e o δ̂* verificado, com EP **jackknife por réplica**
+   aplicado ao próprio estimador (máximo do SR agregado). Classificação (emenda 5,
+   :func:`classify`): *inconclusiva* se 2·EP > metade da distância ao nível vizinho mais
+   próximo em {0, 1, 2,5, 4}; *calibrada* se |δ̂* − alvo| ≤ 2·EP; senão *reprovada*, com
+   um único refinamento pela inclinação local, em outro fluxo, e nova classificação.
+   Nenhuma célula é descartada: todas saem com status, e a execução registra o
+   resultado inteiro. Histórico: até a emenda 5, a tolerância era 0,25 absoluta, e a
+   primeira reprovação interrompia a execução (``run-434c7484…``, falhou).
 5. H₁-com: π = alvo·σ_EW/√(T − 1), com σ_EW exato (``equal_weight_volatility``); a tabela de
    SR verdadeiros vem do oráculo. Sob H₀ os SR verdadeiros são exatamente 0 (analítico).
 
@@ -86,7 +91,8 @@ PARAMETERS: dict[str, JsonValue] = {
     "max_extensions": 4,
     "grid_replicates": 30,
     "oracle_replicates": 100,
-    "tolerance": 0.25,
+    "tolerance_rule": "emenda 5: |δ̂* − δ*| ≤ 2·EP (jackknife por réplica); inconclusiva se "
+    "2·EP > metade da distância ao nível mais próximo em {0, 1, 2,5, 4}",
 }
 
 PER_WORKER_BYTES = 300 * 2**20
@@ -108,12 +114,31 @@ def pooled_sharpe(
     parts: Sequence[tuple[int, FloatArray, FloatArray, FloatArray]],
 ) -> tuple[FloatArray, FloatArray, int]:
     """SR agregado (todas as linhas de todas as réplicas; combinação exata de grupos, em
-    ordem fixa), erro-padrão (desvio dos ŜR por réplica / √R) e T por réplica."""
+    ordem fixa), seu erro-padrão jackknife por réplica e T por réplica.
+
+    **Unidade amostral independente: a réplica.** Linhas (pregões) e ativos de uma réplica
+    são dependentes (fator comum, coortes sobrepostas, médias persistentes) e nunca são
+    tratados como observações independentes: o erro-padrão vem do jackknife que retira
+    uma réplica inteira de cada vez, aplicado ao **mesmo** estimador (o SR agregado).
+    """
+    true_sr, _, n_rows, jack = _pooled_with_jackknife(parts)
+    return true_sr, jackknife_se(jack), n_rows
+
+
+def _check_parts(parts: Sequence[tuple[int, FloatArray, FloatArray, FloatArray]]) -> int:
     if not parts:
         raise ContractViolationError("nenhuma réplica")
     n_rows = parts[0][0]
     if any(p[0] != n_rows for p in parts):
         raise ContractViolationError("réplicas com calendários diferentes")
+    return n_rows
+
+
+def _pooled_with_jackknife(
+    parts: Sequence[tuple[int, FloatArray, FloatArray, FloatArray]],
+) -> tuple[FloatArray, FloatArray, int, FloatArray]:
+    """(SR agregado, SR de cada réplica, T, matriz R × C dos SR agregados sem a réplica r)."""
+    n_rows = _check_parts(parts)
     n, mean, m2 = 0, np.zeros_like(parts[0][1]), np.zeros_like(parts[0][2])
     for count, part_mean, part_m2, _ in parts:
         total = n + count
@@ -122,13 +147,27 @@ def pooled_sharpe(
         m2 = m2 + part_m2 + delta**2 * (n * count / total)
         n = total
     true_sr: FloatArray = mean / np.sqrt(m2 / (n - 1))
+    jack = np.full((len(parts), true_sr.size), np.nan)
+    if len(parts) > 1:
+        for r, (count, part_mean, part_m2, _) in enumerate(parts):
+            rest = n - count
+            mean_r = (mean * n - part_mean * count) / rest
+            # remove o grupo r da soma de quadrados centrada (inverso da combinação de grupos)
+            m2_r = m2 - part_m2 - (part_mean - mean_r) ** 2 * (rest * count / n)
+            jack[r] = mean_r / np.sqrt(m2_r / (rest - 1))
     per_rep = np.array([p[3] for p in parts])
-    se: FloatArray = (
-        per_rep.std(axis=0, ddof=1) / math.sqrt(len(parts))
-        if len(parts) > 1
-        else np.full_like(true_sr, math.nan)
-    )
-    return true_sr, se, n_rows
+    return true_sr, per_rep, n_rows, jack
+
+
+def jackknife_se(leave_one_out: FloatArray) -> FloatArray:
+    """√((R−1)/R · Σ (θ₍₋ᵣ₎ − θ̄)²) por coluna; NaN com R < 2."""
+    values = np.asarray(leave_one_out, dtype=np.float64)
+    r = values.shape[0]
+    if r < 2:
+        return np.full(values.shape[1:], np.nan)
+    centered = values - values.mean(axis=0)
+    out: FloatArray = np.sqrt((r - 1) / r * np.sum(centered**2, axis=0))
+    return out
 
 
 def truth_table(
@@ -141,6 +180,8 @@ def truth_table(
     n_workers: int,
 ) -> dict[str, Any]:
     """SR verdadeiros (oráculo) da família, δ̂* e a configuração de maior SR verdadeiro."""
+    if n_reps < 2:
+        raise ContractViolationError("o erro-padrão por réplica exige ao menos 2 réplicas")
     scenario = params["scenarios"][params["scenario"]]
     family = str(params["family"])
     items = [
@@ -148,7 +189,10 @@ def truth_table(
         for rep in range(n_reps)
     ]
     parts = map_ordered(replicate_moments, items, n_workers=n_workers)
-    true_sr, se, n_rows = pooled_sharpe(parts)
+    true_sr, _, n_rows, jack = _pooled_with_jackknife(parts)
+    se = jackknife_se(jack)
+    # δ̂* = máx_c SR_c·√(T−1): o jackknife é aplicado ao máximo (inclui a seleção)
+    delta_se = float(jackknife_se(jack.max(axis=1)[:, None])[0]) * math.sqrt(n_rows - 1)
     ids = [c.config_id for c in momentum_family(family)]
     best = int(np.argmax(true_sr))
     return {
@@ -158,7 +202,7 @@ def truth_table(
         "n_rows": n_rows,
         "n_replicates": n_reps,
         "delta_star": float(true_sr[best] * math.sqrt(n_rows - 1)),
-        "delta_star_se": float(se[best] * math.sqrt(n_rows - 1)),
+        "delta_star_se": delta_se,
         "best_config": ids[best],
     }
 
@@ -199,6 +243,53 @@ def local_log_slope(table: Sequence[tuple[float, float]], scale: float) -> float
     raise ContractViolationError("escala fora da grade avaliada")  # inalcançável
 
 
+# ------------------------------------------------------------------ classificação (emenda 5)
+CALIBRATED = "calibrada"
+REJECTED = "reprovada"
+INCONCLUSIVE = "inconclusiva"
+
+
+def precision_limit(target: float, levels: Sequence[float]) -> float:
+    """Maior tolerância admissível para o alvo: metade da distância ao nível mais próximo
+    entre ``levels`` (que inclui 0, a nula). Acima disso, um δ aceito poderia estar mais
+    perto de outro nível do desenho, e os níveis deixariam de ser distinguíveis."""
+    others = [abs(target - level) for level in levels if level != target]
+    if not others:
+        raise ContractViolationError("são necessários ao menos dois níveis")
+    return 0.5 * min(others)
+
+
+def classify(achieved: float, se: float, target: float, levels: Sequence[float]) -> dict[str, Any]:
+    """Regra da emenda 5 (fixada antes da nova calibração), em unidades de δ:
+
+    - tolerância = 2·EP (EP jackknife por réplica de δ̂*);
+    - **inconclusiva** se 2·EP > ``precision_limit`` (precisão insuficiente para distinguir
+      o alvo dos níveis vizinhos; não é aprovada só porque o EP é grande);
+    - **calibrada** se |δ̂* − alvo| ≤ 2·EP; senão **reprovada**.
+    """
+    if not (math.isfinite(achieved) and math.isfinite(se) and se >= 0.0):
+        raise ContractViolationError("δ̂* e EP devem ser finitos, EP >= 0")
+    tolerance = 2.0 * se
+    limit = precision_limit(target, levels)
+    diff = abs(achieved - target)
+    if tolerance > limit:
+        status = INCONCLUSIVE
+    elif diff <= tolerance:
+        status = CALIBRATED
+    else:
+        status = REJECTED
+    return {
+        "target_delta": float(target),
+        "achieved_delta": float(achieved),
+        "delta_se": float(se),
+        "tolerance": tolerance,
+        "precision_limit": limit,
+        "abs_difference": diff,
+        "status": status,
+        "inconclusive": status == INCONCLUSIVE,
+    }
+
+
 # ------------------------------------------------------------------ calibração
 def _signal(half_life: float, scale: float, premium: float = 0.0) -> dict[str, float]:
     return {"half_life": float(half_life), "scale": float(scale), "premium": float(premium)}
@@ -213,7 +304,6 @@ def calibrate(
 ) -> dict[str, Any]:
     """Procedimento completo do docstring do módulo. Devolve escalas, tabelas e verdades."""
     say = log or (lambda _msg: None)
-    tolerance = float(params["tolerance"])
     out_cells: dict[str, Any] = {}
     grids: dict[str, Any] = {}
     for h_index, half_life in enumerate(params["half_lives"]):
@@ -252,22 +342,24 @@ def calibrate(
             evaluate(high * 2.0)
         table = sorted(evaluated.items())
         grids[f"h{half_life:g}"] = [[s, d] for s, d in table]
+        levels = [0.0, *(float(t) for t in params["targets"])]
         for t_index, target in enumerate(params["targets"]):
             scale = interpolate_scale(table, float(target))
-            prefix = (STAGE_ORACLE, h_index, t_index)
             truth = truth_table(
                 params,
                 _signal(half_life, scale),
                 root_seed,
-                prefix,
+                (STAGE_ORACLE, h_index, t_index),
                 int(params["oracle_replicates"]),
                 n_workers=n_workers,
             )
-            attempts = [{"scale": scale, "delta_star": truth["delta_star"]}]
-            achieved = float(truth["delta_star"])
-            if abs(achieved - target) > tolerance:
+            verdict = classify(truth["delta_star"], truth["delta_star_se"], target, levels)
+            attempts = [{"scale": scale, "stage": "verification", **verdict}]
+            if verdict["status"] == REJECTED:
+                # um único refinamento, com fluxo independente; inconclusiva não é refinada
+                # (mais uma verificação com o mesmo R não ganha precisão)
                 slope = local_log_slope(table, scale)
-                scale = scale * (float(target) / achieved) ** (1.0 / slope)
+                scale = scale * (float(target) / verdict["achieved_delta"]) ** (1.0 / slope)
                 truth = truth_table(
                     params,
                     _signal(half_life, scale),
@@ -276,17 +368,16 @@ def calibrate(
                     int(params["oracle_replicates"]),
                     n_workers=n_workers,
                 )
-                attempts.append({"scale": scale, "delta_star": truth["delta_star"]})
-                achieved = float(truth["delta_star"])
-                if abs(achieved - target) > tolerance:
-                    raise ContractViolationError(
-                        f"calibração não convergiu: h={half_life}, alvo {target}, δ̂*={achieved}"
-                    )
-            say(f"h={half_life:g} alvo={target}: s={scale:.6g}, δ̂*={achieved:.3f}")
+                verdict = classify(truth["delta_star"], truth["delta_star_se"], target, levels)
+                attempts.append({"scale": scale, "stage": "refinement", **verdict})
+            say(
+                f"h={half_life:g} alvo={target}: s={scale:.6g}, δ̂*={verdict['achieved_delta']:.3f}"
+                f" ± {verdict['delta_se']:.3f} -> {verdict['status']}"
+            )
             out_cells[f"mom_h{half_life:g}_d{target:g}"] = {
                 "hypothesis": "H1-mom",
                 "signal": _signal(half_life, scale),
-                "target_delta": float(target),
+                "calibration": verdict,
                 "attempts": attempts,
                 "truth": truth,
             }
@@ -312,12 +403,26 @@ def calibrate(
     out_cells[f"com_d{target:g}"] = {
         "hypothesis": "H1-com",
         "signal": _signal(252.0, 0.0, premium),
-        "target_delta_equal_weight": target,
-        "equal_weight_volatility": sigma_ew,
+        "calibration": {
+            "status": CALIBRATED,
+            "method": "analítico: π = alvo·σ_EW/√(T−1), σ_EW exato; δ_EW alcançado = alvo",
+            "target_delta_equal_weight": target,
+            "achieved_delta_equal_weight": target,
+            "equal_weight_volatility": sigma_ew,
+            "f144_delta_star": truth["delta_star"],
+            "f144_delta_star_se": truth["delta_star_se"],
+            "inconclusive": False,
+        },
         "n_rows": n_rows,
         "truth": truth,
     }
-    return {"grids": grids, "cells": out_cells}
+    statuses = {k: v["calibration"]["status"] for k, v in out_cells.items()}
+    return {
+        "grids": grids,
+        "cells": out_cells,
+        "statuses": statuses,
+        "all_calibrated": all(v == CALIBRATED for v in statuses.values()),
+    }
 
 
 def execute(
@@ -367,6 +472,7 @@ def execute(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--workers", type=int, default=None, help="padrão: plano de DA-07")
+    parser.add_argument("--seed", type=int, default=None, help="semente raiz fixa (registrada)")
     args = parser.parse_args(argv)
     settings = load_settings()
     workers = (
@@ -384,6 +490,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ledger_path=settings.paths.ledger,
         artifacts_root=settings.paths.artifacts,
         n_workers=workers,
+        root_seed=args.seed,
         log=log,
     )
     if isinstance(sys.stdout, io.TextIOWrapper):

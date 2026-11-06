@@ -249,6 +249,12 @@ def build(
     out_dir: Path,
     protocol_path: str = "docs/DE07_PROTOCOL.md",
 ) -> tuple[Path, Path]:
+    statuses = {k: v["calibration"]["status"] for k, v in calibration["cells"].items()}
+    pending = {k: v for k, v in statuses.items() if v != "calibrada"}
+    if pending:
+        raise ContractViolationError(
+            f"células não calibradas (emenda 5): {pending}; o manifesto não pode ser congelado"
+        )
     truth_rel = (out_dir / f"de07_signal_truth_v{version}.json").relative_to(project_root)
     truth = {
         "calibration_run_id": calibration_run_id,

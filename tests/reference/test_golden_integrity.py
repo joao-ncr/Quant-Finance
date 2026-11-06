@@ -1,8 +1,8 @@
 """Integridade e coerência interna dos golden files gerados em R.
 
-Estes testes NÃO validam implementações do projeto (PBO e N efetivo ainda não existem).
-Garantem que as referências estão intactas (hashes do manifest) e coerentes com as
-definições do próprio pacote, para que possam ser usadas na Etapa 3 sem precisar do R.
+Estes testes não validam implementações do projeto (isso fica em test_cscv_reference.py e
+test_effective_trials_reference.py). Garantem que as referências estão intactas (hashes do
+manifest) e coerentes com as definições do próprio pacote, sem precisar do R.
 """
 
 from __future__ import annotations
@@ -112,3 +112,23 @@ def test_meff_reference_is_internally_consistent(case: Path) -> None:
         value = float(row["meff_floor"])
         assert value == int(value)
         assert 1 <= value <= n
+
+
+def test_odd_case_discriminates_rank_conventions() -> None:
+    """pbo_odd (N = 9) precisa separar rank/N (pbo) de rank/(N+1) (artigo, DE-05.a).
+
+    Discriminação = existe partição com rank OOS de n* igual a (N+1)/2, onde o logit do
+    artigo é 0 (conta como sobreajuste) e o do pbo é positivo. S = 4 é o controle.
+    """
+    case = GOLDEN / "pbo_odd"
+    n = _n_configs(case)
+    assert n % 2 == 1
+    for s, discriminates in ((4, False), (8, True), (12, True)):
+        rows = _rows(case / f"expected_pbo_s{s}.csv")
+        ranks = [float(r["os_rank"]) for r in rows]
+        phi_package = _summary(case / f"expected_pbo_summary_s{s}.csv")["phi"]
+        phi_paper = sum(rank / (n + 1) <= 0.5 for rank in ranks) / len(ranks)
+        assert ((n + 1) / 2 in ranks) is discriminates, s
+        assert (phi_paper != phi_package) is discriminates, s
+        assert phi_paper >= phi_package  # rank/(N+1) só acrescenta o caso da mediana
+        assert n in ranks  # rank OOS máximo: λ = +inf no pbo, ln(N) no artigo

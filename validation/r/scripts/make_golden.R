@@ -100,6 +100,7 @@ meff_case <- function(case) {
 pbo_case("pbo_noise", c(4, 8, 12))
 pbo_case("pbo_signal", c(4, 8, 12))
 pbo_case("pbo_ties", c(4, 8))
+pbo_case("pbo_odd", c(4, 8, 12))  # N ímpar: discrimina rank/N de rank/(N+1)
 meff_case("meff_independent")
 meff_case("meff_blocks")
 cat("golden references written to", golden_dir, "\n")

@@ -16,7 +16,7 @@ As dependências transitivas (lattice, foreach, Rcpp, RcppEigen etc.) estão lis
 ## Estado (2026-11-06)
 - R 4.6.2 instalado por usuário em `%LOCALAPPDATA%\Programs\R\R-4.6.2` (sem administrador).
 - `renv` inicializado em modo `explicit`: só entra no lockfile o que está declarado em `DESCRIPTION`.
-- Golden files gerados e congelados: `pbo_noise`, `pbo_signal`, `pbo_ties`, `meff_independent`, `meff_blocks`.
+- Golden files gerados e congelados: `pbo_noise`, `pbo_signal`, `pbo_ties`, `meff_independent`, `meff_blocks` e, em 2026-11-06 (Etapa B), `pbo_odd` (N = 9, discrimina rank/N de rank/(N+1)). Adicionar `pbo_odd` regenerou os demais casos byte a byte idênticos.
 
 ## Instalação do zero (Windows, sem administrador)
 1. **R**: baixe o instalador oficial do CRAN e confira o SHA-256 (o manifesto do winget publica o hash):

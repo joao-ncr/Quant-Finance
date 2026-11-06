@@ -143,6 +143,12 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Alternativas consideradas:** S ∈ {8, 10, 16} vs. padrão; Sharpe vs. Omega; tamanho mínimo de bloco.
 - **Achados na referência (`pbo` 1.3.5, código-fonte, 2026-11-06):** ω̄ = rank/N com empates pela média, e λ = +∞ substituído por 6; `which.max` resolve empates pelo primeiro índice; exige T divisível por S. **Sub-decisões pendentes:** ω̄ = rank/N (pacote) ou rank/(N+1) (verificar no artigo); regra para T não divisível por S; empates. Ver METHODOLOGY_CONVENTIONS.md §3.1.
 - **Golden files** gerados com S ∈ {4, 8, 12}, T = 480 e N = 20 (ruído, sinal plantado, empates).
+- **Golden discriminante (2026-11-06, Etapa B):** `pbo_odd`, ruído i.i.d. com N = 9 (ímpar), T = 480, S ∈ {4, 8, 12}, fluxo 6 da semente 20261106. Em S = 8 e 12 há partições com rank OOS de n* = (N+1)/2 = 5 (1 e 10 partições), em que as convenções divergem.
+  - φ do `pbo` (rank/N): 0,1429 (S = 8) e 0,0942 (S = 12);
+  - φ pela definição do artigo (rank/(N+1)), recalculado do `os_rank` do R: 0,1571 e 0,1050;
+  - S = 4 coincide e serve de controle.
+  - Há também partições com rank OOS = N (λ = +∞ → 6 no pacote; ln 9 no artigo).
+  - Adicionar o caso regenerou os golden anteriores byte a byte idênticos.
 - **Verificação no artigo original (2026-11-06, visual):** ω̄ = r̄/(N + 1) ∈ (0, 1) (p. 12); submatrizes "of equal dimensions", de ordem T/S × N (p. 11); φ = ∫₋∞⁰ f(λ) dλ (p. 13); o artigo não especifica desempate. O `pbo` (rank/N) diverge do artigo. Nos 8 golden files (N = 20), φ coincide nas duas convenções, mas a distribuição de λ não. Análise e recomendações (DE-05.a/b/c) em docs/DECISION_REVIEW_2026-11-06.md §5, aguardando aprovação.
 - **Justificativa:** —
 - **Consequências:** S define C(S, S/2) partições e o custo computacional.

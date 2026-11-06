@@ -59,6 +59,16 @@ def main() -> None:
     ties[:, 2] = ties[:, 1]
     _write("pbo_ties", ties, 3)
 
+    # Caso 6 (2026-11-06, Etapa B): N ÍMPAR (9), ruído i.i.d. Discrimina rank/N (pbo) de
+    # rank/(N+1) (artigo, DE-05.a): quando o rank OOS de n* é exatamente (N+1)/2 = 5, o
+    # logit do artigo é 0 (conta como sobreajuste) e o do pbo é > 0. Também há partições
+    # com rank OOS = N (λ = +∞ no pbo, substituído por 6; ln(N) no artigo). A
+    # discriminação é exigida por tests/reference/test_cscv_reference.py (S = 8 e 12); em
+    # S = 4 as convenções coincidem (controle). Escrito depois dos casos 1–5 para não
+    # alterar nenhum arquivo já congelado.
+    rng = generator_for(ROOT_SEED, 6)
+    _write("pbo_odd", rng.normal(0.0, 0.01, size=(T, 9)), 6)
+
     # Caso 4: N efetivo, configurações independentes -> N_eff perto de N.
     rng = generator_for(ROOT_SEED, 4)
     _write("meff_independent", rng.normal(0.0, 0.01, size=(T, N)), 4)

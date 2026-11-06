@@ -6,7 +6,7 @@ Especificação formal das convenções estatísticas e da política de ausênci
 - **§1 (DE-02, DE-02.a, DE-03.a, DE-04.c, DE-08): `DECIDED`.** O desenvolvedor delegou o fechamento dessas decisões ao agente, com base em `docs/DECISION_REVIEW_2026-11-06.md`. O registro formal está em `PROJECT_DECISIONS.md`.
 - §2 (DD-05) e a parte CDI de §1.3 (DD-04): **proposta**, inalteradas. Não bloqueiam a Etapa A.
 - §4 (N efetivo e V): protocolo `DECIDED`; o estimador principal e a escolha definitiva de V continuam **abertos**.
-- §5 (CSCV/PBO, DE-05, S e DE-06): convenções `DECIDED`, **não implementadas**; o valor de S é fixado por regra no pré-registro; o embargo está em aberto, com critério.
+- §5 (CSCV/PBO, DE-05, S e DE-06): convenções `DECIDED`. **Implementadas e validadas em 2026-11-06 (Etapa B; §5.7).** O valor de S é fixado por regra no pré-registro; o embargo está em aberto, com critério.
 
 O código em `src/frente_e/core/metrics.py`, `core/rates.py` e `core/sharpe_inference.py` implementa **exatamente** a §1. Qualquer mudança deve alterar este documento, o código e os testes juntos.
 
@@ -330,7 +330,7 @@ Com V_H0 e N efetivo, a fração de DSR > 0,95 ficou entre 0,02% e 0,75% em toda
 
 ---
 
-## 5. CSCV e PBO (DE-05, S, DE-06): convenções decididas, **não implementadas**
+## 5. CSCV e PBO (DE-05, S, DE-06): convenções decididas; implementação em §5.7
 
 ### 5.1 DE-05.a — rank relativo (DECIDED)
 - `ω̄_c = r̄_c(n*) / (N + 1)` e `λ_c = ln(ω̄_c / (1 − ω̄_c))`, como no artigo (p. 12, conferido visualmente). Ranks maiores são melhores. `φ = #{λ_c ≤ 0} / C(S, S/2)`.
@@ -362,7 +362,11 @@ Sharpe na convenção DE-02, calculado sobre J (IS, T/2 linhas) e J̄ (OOS, T/2 
 - S muda o número de partições C(S, S/2): 70 com S = 8, 924 com S = 12, 12.870 com S = 16. O texto impresso do artigo diz "12, 780", erro tipográfico, já que C(16, 8) = 12.870.
 - Como a CSCV é exaustiva, φ não tem erro de amostragem das partições; a resolução de φ é 1/C(S, S/2). O desvio-padrão binomial do artigo (p. 22) trata os logits como independentes, e eles não são, porque as partições se sobrepõem [inferência].
 - O artigo sugere S = 16 para cerca de 4 anos diários (blocos trimestrais, "preserve daily, weekly and monthly effects") e alerta que S grande demais destrói a estrutura temporal.
-- **Custo:** com somas por bloco pré-computadas, cada partição custa O(S·N), e S ≤ 16 é trivial nesta máquina. Por isso o custo não é critério de escolha [inferência; medir no benchmark B4].
+- **Custo:** com somas por bloco pré-computadas, cada partição custaria O(S·N), e S ≤ 16 seria trivial nesta máquina. Por isso o custo não é critério de escolha [inferência; medir no benchmark B4].
+  - **Correção (2026-11-06, medido):** a implementação adotada recalcula o Sharpe sobre J e J̄ em cada partição, que é a forma direta da definição, e não usa somas por bloco. Medições (dados aleatórios, só engenharia, fora do ledger): S = 12, T = 4536, N = 144 → 924 partições em 9,5 s; S = 16, T = 4528, N = 144 → 12.870 partições em 131 s.
+  - Uma execução do estudo real cabe no orçamento (≤ 2 h). Simulações com centenas de réplicas não cabem.
+  - **Gatilho de otimização:** antes de qualquer simulação de CSCV com muitas réplicas (critério do embargo, desenho não nulo), implementar somas por bloco com combinação exata de médias e variâncias (fórmula de combinação de momentos por grupos), validada contra a implementação direta.
+  - Mesmo com o custo maior, ele não é critério de escolha de S, porque a escolha precede a medição de desempenho.
 
 **Regra:**
 - S = **o maior par ≤ 16** tal que o comprimento do bloco `⌊T/S⌋ ≥ max(63, H_max)`.
@@ -371,6 +375,38 @@ Sharpe na convenção DE-02, calculado sobre J (IS, T/2 linhas) e J̄ (OOS, T/2 
 - O teto 16 é o valor do exemplo do artigo, uma **escolha operacional**.
 - Sensibilidade reportada com S ∈ {8, 12, 16}, se admissíveis.
 - Depende de T (período, DD-01) e de H_max (DE-01). Por isso o valor é calculado e congelado no pré-registro, antes de olhar resultados.
+
+### 5.7 Implementação e validação (2026-11-06, Etapa B)
+**Componentes:**
+- `core.cscv`:
+  - `in_sample_block_sets` gera as partições, em ordem lexicográfica (= `combn`);
+  - `partition_performance` calcula o Sharpe DE-02 em J e J̄ e rejeita T % S ≠ 0;
+  - `rank_partitions` determina n*, o tamanho do empate IS e o posto médio OOS;
+  - `cscv_pbo` aplica os contratos (N ≥ 2, colunas idênticas proibidas), calcula ω̄ = r̄/(N+1) e λ, e devolve `CSCVResult`, com φ, o nº de empates IS e a probabilidade de perda OOS.
+- `experiments.cscv_input`:
+  - `trim_oldest_to_multiple` aplica DE-05.b e devolve os índices descartados, para o ledger;
+  - `cscv_result_to_json` grava o resultado por partição.
+- φ é decidido por `2·r̄ ≤ N + 1`, uma comparação exata entre postos, equivalente a λ ≤ 0.
+
+**Validação:**
+- **Contra o `pbo` 1.3.5, 4 casos e 11 combinações (caso, S), incluindo `pbo_odd`:**
+  - blocos IS, n*, posto OOS e posto médio em empates **idênticos**;
+  - R[n*] e R̄[n*] dentro de rtol 1e-12 / atol 1e-15, a tolerância pré-registrada no manifesto;
+  - ω̄, λ e φ do pacote reconstruídos a partir do posto com a regra rank/N, o que confirma a leitura da referência.
+- **Contra a definição do artigo:**
+  - o φ do projeto é igual a #(r̄/(N+1) ≤ 1/2)/C calculado com os postos do R, em todos os casos;
+  - no `pbo_odd`, ele difere do pacote em S = 8 (0,1571 contra 0,1429) e S = 12 (0,1050 contra 0,0942), e a diferença é exatamente a fração de partições com r̄ = (N+1)/2;
+  - o posto máximo dá λ = ln N, finito.
+- **Comportamento conhecido:**
+  - sob a nula i.i.d., E[φ] = ⌊(N+1)/2⌋/N **exato**: 400 conjuntos com N = 5 reproduzem 0,6 dentro de 4 erros-padrão e ficam a mais de 10 erros-padrão de 0,4, o valor com rank/N;
+  - sinal forte → φ = 0;
+  - invariância a escala positiva e a permutação de colunas.
+- **`pbo_ties`:** as funções de nível baixo reproduzem o pacote, inclusive os postos médios; `cscv_pbo` rejeita o caso, porque tem colunas idênticas (DE-05.c).
+- **Ponta a ponta:** matriz sintética → descarte das 3 observações mais antigas (T = 243, S = 8) → núcleo → ledger → reconstrução com bytes idênticos (`tests/integration/test_cscv_run.py`).
+
+**Não implementado, por decisão de escopo:** a regressão de degradação de desempenho e a dominância estocástica do §3 do artigo. Os pares (R[n*], R̄[n*]) gravados por partição permitem calculá-las no relatório.
+
+**Limitação:** o artigo da PBO não traz exemplo numérico reproduzível. As figuras vêm de simulações sem semente publicada. A validação contra o artigo é **pela definição**, não por valores publicados.
 
 ### 5.6 DE-06 — dependência, sobreposição, vazamento, purga e embargo (análise; IN PROGRESS)
 Distinções [inferência, a partir da construção do estudo]:

@@ -131,7 +131,11 @@ Arquivo **versionado** (público). Status possíveis: `PENDING` · `IN PROGRESS`
 - **Referências:** Bailey e López de Prado, *The Deflated Sharpe Ratio*, JPM 40(5), 2014 (SSRN 2460551).
 
 ### DE-05 — CSCV e métrica da PBO
-- **Status:** **IN PROGRESS. Convenções DECIDED (2026-11-06), não implementadas:**
+- **Status:** **IN PROGRESS.**
+  - **Implementação (2026-11-06, Etapa B):** `core.cscv` e `experiments.cscv_input`, validados contra os 4 golden do `pbo`, inclusive o discriminante `pbo_odd`, contra a definição do artigo e contra a expectativa exata sob a nula (METHODOLOGY_CONVENTIONS.md §5.7).
+  - Custo medido: 131 s com S = 16, T = 4528, N = 144. Há gatilho de otimização antes de simulações com muitas réplicas.
+  - Abertos: o valor de S (pré-registro) e o embargo (DE-06).
+- Convenções DECIDED (2026-11-06):
   - **DE-05.a:** ω̄ = r̄/(N+1), como no artigo; o rank/N do `pbo` é descartado;
   - **DE-05.b:** o núcleo rejeita T % S ≠ 0; o experimento descarta as T mod S observações mais antigas por regra pré-registrada e registra as datas no ledger;
   - **DE-05.c:** colunas idênticas são erro; empate IS → primeira configuração na ordem canônica, contado; empates OOS → posto médio;

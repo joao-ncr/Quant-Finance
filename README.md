@@ -1,4 +1,4 @@
-# Frente E: validação estatística de regras simples na B3
+# Validação estatística de regras simples na B3
 
 Pesquisa acadêmica: quanto do desempenho aparente de uma família de regras de momentum na B3 sobrevive às correções por seleção e múltiplos testes (Deflated Sharpe Ratio, Probability of Backtest Overfitting via CSCV), e como essa deflação varia com o tamanho da família e com a liquidez.
 
